@@ -89,4 +89,32 @@ model PaymentIntent {
   shipping         Json?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
+  refunds          Refund[]
+}
+
+enum RefundReason {
+  duplicate
+  fraudulent
+  requested_by_customer
+}
+
+enum RefundStatus {
+  succeeded
+  failed
+  pending
+}
+
+model Refund {
+  id               String        @id
+  merchantId       String
+  merchant         Merchant      @relation(fields: [merchantId], references: [id])
+  paymentIntentId  String
+  paymentIntent    PaymentIntent @relation(fields: [paymentIntentId], references: [id])
+  amount           Int
+  currency         String
+  reason           RefundReason?
+  status           RefundStatus  @default(pending)
+  worldpayRefundId String?
+  idempotencyKey   String?
+  createdAt        DateTime      @default(now())
 }
