@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Merchant {
+  id              String   @id @default(cuid())
+  name            String
+  apiKey          String   @map("api_key")
+  worldpayEntity  String   @map("worldpay_entity")
+  payfacSchemeId  String?  @map("payfac_scheme_id")
+  subMerchantRef  Json?    @map("sub_merchant_ref")
+  subMerchantName String?  @map("sub_merchant_name")
+  subMerchantAddress Json? @map("sub_merchant_address")
+  fraudsightConfig Json?   @map("fraudsight_config")
+  status          String   @default("active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  apiKeys ApiKey[]
+
+  @@map("merchants")
+}
+
+model ApiKey {
+  id         String   @id @default(cuid())
+  merchantId String   @map("merchant_id")
+  keyHash    String   @map("key_hash")
+  scopes     String   @default("read,write")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@unique([keyHash])
+  @@map("api_keys")
+}
