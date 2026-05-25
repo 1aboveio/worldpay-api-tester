@@ -1297,3 +1297,251 @@ MIT (后续):
 | `notEnrolled` | → 继续 AUTHORIZING (无 3DS 保障) |
 | `unavailable` | → 继续 AUTHORIZING |
 | `authenticationFailed` | → `PAYMENT_FAILED` |
+
+---
+
+## 11. Stripe vs. 我们的设计：3DS 全链路对比
+
+### 11.1 架构对比
+
+```
+┌─── Stripe ─────────────────────────┐  ┌─── 我们的设计 ──────────────────────┐
+│                                    │  │                                    │
+│  商户后端 ──▶ Stripe API            │  │  商户后端 ──▶ PayFac Gateway API      │
+│              (PaymentIntents)      │  │              (PaymentIntents)       │
+│                                    │  │                                    │
+│  浏览器 ───▶ Stripe.js SDK          │  │  浏览器 ───▶ 无专用 SDK (REST 直调)    │
+│           │  · DDC 自动             │  │           │  · DDC 手动触发           │
+│           │  · challenge iframe    │  │           │  · challenge iframe/redirect│
+│           │  · card tokenization  │  │           │  · card tokenization     │
+│                                    │  │                                    │
+│  Stripe 后端                        │  │  PayFac Gateway                     │
+│  · 直连卡网络 (acquirer)             │  │  · 下游连接 Worldpay (acquirer)      │
+│  · 3DS 自建 (DS 直连)               │  │  · 3DS 透传 Worldpay 3DS API        │
+│  · 后台默默执行 verify              │  │  · Gateway 回调中执行 verify        │
+│  · Stripe.js 自动轮询状态           │  │  · 商户需手动 GET 轮询状态            │
+└────────────────────────────────────┘  └────────────────────────────────────┘
+```
+
+### 11.2 支付流程逐步骤对比
+
+#### 步骤 1：Token 化
+
+| 维度 | Stripe | 我们的设计 |
+|------|--------|-----------|
+| 触发方式 | Stripe.js Elements / `createPaymentMethod()` | `POST /v1/payment_methods` 或 PaymentIntent 中直接传卡号 |
+| 卡号流向 | 浏览器 → Stripe (直连，商户不可见) | 浏览器 → 商户后端 → Gateway → Worldpay Tokens API |
+| PCI 影响 | SAQ-A (最低) | SAQ-D (较高，需 Gateway 作为 PCI 中转) |
+| 返回值 | `pm_xxx` PaymentMethod 对象 | `pm_xxx` PaymentMethod 对象（仿 Stripe） |
+
+> **我们可改进的方向**：提供前端 JS SDK，直连 Gateway tokenize 端点，避免卡号经过商户后端。
+
+#### 步骤 2：DDC (Device Data Collection)
+
+| 维度 | Stripe | 我们的设计 |
+|------|--------|-----------|
+| **触发时机** | 页面加载时。`stripe.js` 自动加载 DDC iframe，用户无感知 | PaymentIntent 创建后。Gateway 返回 `requires_device_data` + `{ddc_url, ddc_jwt}` |
+| **谁触发** | Stripe.js SDK，自动 | 商户前端代码，需手动处理 |
+| **前端代码** | 零代码。SDK 内置 | 需要商户写 ~20 行 JS：创建隐藏 iframe → POST JWT → 监听 postMessage → 回传 sessionId |
+| **时序** | 与用户填写卡号并行，支付时已就绪 | 串行：创建 PaymentIntent → 等待 → 运行 DDC → 回传 → 继续 |
+| **延迟感知** | 0ms（提前完成） | 2-5 秒（同步等待） |
+| **API 交互** | 无。对商户完全透明 | `requires_device_data` 状态 + `POST /device_data` 端点 |
+
+> **这是最大的差距点**。Stripe 的 DDC 完全隐藏，我们的需要商户显式介入。解决方案：未来提供前端 SDK，在 checkout 页面加载时自动运行 DDC。
+
+#### 步骤 3：3DS Authentication
+
+| 维度 | Stripe | 我们的设计 |
+|------|--------|-----------|
+| **调用方式** | `confirmCardPayment()` 内部自动发起 | Gateway 在收到 DDC sessionId 后自动发起 |
+| **商户可见性** | 完全不可见 | 不可见（仅感知到 PaymentIntent 状态流转） |
+| **Frictionless 结果** | Stripe 内部消化，直接跳到授权 | Gateway 内部消化，直接跳到授权 |
+| **相同点** | ✅ 对商户透明 | ✅ 对商户透明 |
+
+#### 步骤 4：3DS Challenge
+
+这是差距最大的环节：
+
+**Stripe（全自动 iframe 模式）：**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Stripe Challenge 流程                     │
+│                                                             │
+│  ① Stripe.js 收到 requires_action                           │
+│     → 自动在页面上弹出 iframe modal                          │
+│     → modal 内加载 issuer ACS URL                           │
+│                                                             │
+│  ② 用户在 modal 中完成 OTP / 生物识别                         │
+│                                                             │
+│  ③ ACS 通过 postMessage 通知 Stripe.js                       │
+│     → Stripe.js 自动发送到 Stripe 后端                        │
+│     → Stripe 后端 verify + authorize                         │
+│     → Stripe.js 自动更新 PaymentIntent 状态                   │
+│                                                             │
+│  ④ 商户代码 = 0 行                                           │
+│     confirmCardPayment() 的 Promise resolve 即可              │
+│                                                             │
+│  浏览器路径: Browser → Stripe iframe → issuer ACS             │
+│             (全程不离开商户页面)                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**我们的设计（Redirect 模式为主）：**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    我们的 Challenge 流程                      │
+│                                                             │
+│  ① Gateway 返回 {status:"requires_action",                  │
+│                   challenge_url, jwt}                        │
+│                                                             │
+│  ② 商户前端:                                                  │
+│     if (iframe模式) {                                        │
+│       创建 iframe → POST JWT → 用户完成                      │
+│       → issuer postMessage → 前端接收                        │
+│     }                                                        │
+│     if (redirect模式) {                                       │
+│       window.location = challenge_url                        │
+│       → issuer 完成 → 302 到 Gateway                         │
+│       → Gateway process → 302 到 merchant return_url          │
+│       → 前端 GET /payment_intents/{id} 轮询                   │
+│     }                                                        │
+│                                                             │
+│  ③ 商户代码 ~30-50 行（iframe 处理 + 状态轮询）                 │
+│                                                             │
+│  浏览器路径 (redirect):                                       │
+│    Browser → issuer ACS → Gateway → Browser → Merchant Page │
+│  浏览器路径 (iframe):                                         │
+│    Browser → iframe → issuer ACS → postMessage               │
+│             (不离开商户页面)                                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Challenge 对比表：**
+
+| 维度 | Stripe | 我们的设计 |
+|------|--------|-----------|
+| **iframe 模式** | ✅ 内置，自动 | ⚠️ 需商户手动实现 iframe + postMessage |
+| **redirect 模式** | ✅ Stripe.js 处理回调，Promise 层面透明 | ⚠️ 商户需处理 302 回调 + 轮询状态 |
+| **模态框/UI** | Stripe.js 自动弹出 branded modal | 商户自行处理 UI |
+| **return_url** | `hooks.stripe.com` (Stripe 的 URL) | `gateway.payfac.com/v1/3ds/callback` (我们的 URL) |
+| **服务端回调处理** | Stripe 后台自动 | Gateway 自动 (两者相同) |
+| **商户代码量** | 0 行 | 30-50 行 |
+| **iframe → redirect 切换** | Stripe.js 自动降级 | 商户自行判断 |
+| **ios/Safari ITP 兼容** | ✅ Stripe 已处理 | ⚠️ 商户需自行处理 |
+
+### 11.3 状态机对比
+
+```
+Stripe PaymentIntent 状态:                  我们的 PaymentIntent 状态:
+
+  requires_payment_method                   CREATED
+       │                                         │
+       ▼                                         ▼
+  requires_confirmation    (确认时: tokenize     TOKENIZING → TOKENIZED
+       │                   + fraud assess        → RISK_ASSESSING → RISK_ASSESSED
+       ▼                   + ddc init)           → DDC_INITIALIZING → REQUIRES_DEVICE_DATA
+  processing              ───────────────▶       → AUTHENTICATING
+       │                           │             → AUTHORIZING)
+       ├── succeeded                 │
+       ├── requires_action          │
+       │    │                       │
+       │    └── succeeded           │
+       │                           │
+       │   (状态单层,               │   (状态分层:
+       │    Stripe 不暴露内部状态)     │    对外: created → processing →
+       │                                    requires_device_data →
+       │                                    requires_action → succeeded
+       │                                    对内: Tokenizing, RiskAssessing,
+       │                                    DDC Init, Authenticating,
+       │                                    Authorizing, Capturing)
+       │
+       ▼
+  requires_capture                        REQUIRES_CAPTURE
+       │                                       │
+       ▼                                       ▼
+  canceled / succeeded                    CANCELED / SUCCEEDED
+
+  (succeeded 可以继续 refund)              (succeeded 可以继续 refund)
+```
+
+**关键差异**：
+- Stripe 的 `processing` 状态打包了 Tokenize → Fraud → 3DS → Auth → Capture 全部内部步骤
+- 我们的设计暴露了 DDC 和 Challenge 两个中间状态（`requires_device_data`, `requires_action`），因为商户需要介入
+- 如果未来提供前端 SDK，可以将 DDC 在 SDK 内部消化，不再暴露 `requires_device_data`
+
+### 11.4 集成复杂度对比
+
+```
+                   Stripe                    我们的设计
+                  ────────                  ──────────
+
+  后端集成:
+  ┌──────────────────────┐    ┌──────────────────────────┐
+  │ POST /payment_intents │    │ POST /payment_intents    │
+  │ 一个 API 搞定          │    │ 一个 API 搞定             │
+  └──────────────────────┘    └──────────────────────────┘
+             ✅ 相同                    ✅ 相同
+
+  前端集成:
+  ┌──────────────────────┐    ┌──────────────────────────┐
+  │ <script src="stripe.js">│  │ 需要自行实现:              │
+  │                        │    │ · DDC 隐藏 iframe        │
+  │ const stripe =         │    │ · postMessage 监听        │
+  │   Stripe('pk_xxx');    │    │ · sessionId 回传          │
+  │                        │    │ · 3DS iframe / redirect  │
+  │ // card element        │    │ · 状态轮询                │
+  │ const elements =       │    │                          │
+  │   stripe.elements();   │    │ 预计 ~50 行 JS           │
+  │                        │    │                          │
+  │ // confirm             │    │                          │
+  │ await stripe.          │    │                          │
+  │   confirmCardPayment() │    │                          │
+  │                        │    │                          │
+  │ ~5 行代码               │    │                          │
+  └──────────────────────┘    └──────────────────────────┘
+
+  3DS 处理:
+  ┌──────────────────────┐    ┌──────────────────────────┐
+  │ 完全自动               │    │ 需商户介入 2 次:           │
+  │ · DDC 自动             │    │ · DDC: 收到                │
+  │ · Challenge 自动弹出    │    │   requires_device_data   │
+  │ · 结果自动处理          │    │   → 运行 iframe → 回传     │
+  │                        │    │ · Challenge: 收到          │
+  │                        │    │   requires_action         │
+  │                        │    │   → 处理 iframe/redirect  │
+  │                        │    │   → 轮询状态               │
+  └──────────────────────┘    └──────────────────────────┘
+```
+
+### 11.5 差异总结
+
+| # | 差异点 | Stripe | 我们的设计 | 影响 | 改进方向 |
+|---|--------|--------|-----------|------|---------|
+| 1 | **DDC** | SDK 自动 | 商户手动 | 每笔支付多 2-5 秒 + 商户代码负担 | 🔧 提供前端 JS SDK，页面加载时自动运行 DDC |
+| 2 | **Challenge** | SDK 自动弹出 modal | 商户自行处理 iframe/redirect | 商户需额外 30+ 行代码 | 🔧 SDK 内置 challenge modal |
+| 3 | **状态轮询** | SDK 自动 | 商户 GET 轮询 | redirect 模式下的额外复杂度 | 🔧 SDK 内置轮询 + WebSocket |
+| 4 | **PCI 范围** | SAQ-A（卡号不经商户） | SAQ-D（需中转） | 合规审计范围更大 | 🔧 SDK 直连 Gateway tokenize |
+| 5 | **多方案兼容** | 仅 Stripe 一家 | 下游可切换 acquirer | ✅ 灵活 | — |
+| 6 | **业务控制** | Stripe 黑盒 | 全链路可观测 | ✅ 可自定义风控、3DS 策略 | — |
+
+### 11.6 演进路线
+
+```
+MVP (当前)                    Phase 2                       Phase 3
+───────────                  ─────────                     ─────────
+
+  商户后端集成 REST API         + 前端 JS SDK                 + PCI 优化
+                              · DDC 自动运行                · SDK 直连 Gateway
+  商户前端自行处理:             · Challenge modal 自动        tokenize
+  · DDC iframe                · 状态自动轮询               · 商户端卡号零接触
+  · Challenge                 · Promise API:              · SAQ-A 合规
+  · 状态轮询                    await pay({...})           · 体验对标 Stripe
+  · ~50 行 JS
+
+  API: PaymentIntents         API: PaymentIntents          API: PaymentIntents
+                              SDK: @payfac/js              SDK: @payfac/js
+```
+
+> **核心结论**：我们的后端 API 设计已对标 Stripe（单端点、omni、auto-capture）。差距主要在前端——Stripe.js 封装了 DDC、Challenge、状态管理。二期投入前端 SDK 即可消除这个差距。
