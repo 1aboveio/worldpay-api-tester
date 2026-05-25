@@ -2,14 +2,26 @@
   "name": "worldpay-api-tester",
   "version": "1.0.0",
   "private": true,
-  "description": "Worldpay Access API verification toolkit for PayFac integration",
-  "type": "module",
+  "description": "PayFac Payment Gateway MVP — Turborepo monorepo",
   "scripts": {
-    "verify:card-payments": "npx tsx src/verify-card-payments.ts",
-    "verify:all": "npx tsx src/verify-card-payments.ts"
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "prisma generate --schema=packages/dal/prisma/schema.prisma",
+    "db:push": "prisma db push --schema=packages/dal/prisma/schema.prisma",
+    "format": "prettier --write ."
   },
   "devDependencies": {
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "@types/node": "^22.0.0",
+    "prettier": "^3.3.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
   }
 }
