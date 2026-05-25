@@ -1,15 +1,21 @@
 {
   "name": "worldpay-api-tester",
-  "version": "1.0.0",
   "private": true,
-  "description": "Worldpay Access API verification toolkit for PayFac integration",
-  "type": "module",
   "scripts": {
-    "verify:card-payments": "npx tsx src/verify-card-payments.ts",
-    "verify:all": "npx tsx src/verify-card-payments.ts"
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "db:generate": "turbo db:generate",
+    "db:push": "cd packages/database && pnpm db:push"
   },
   "devDependencies": {
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "turbo": "^2.5.0",
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@10.6.4",
+  "pnpm": {
+    "onlyBuiltDependencies": ["@prisma/engines", "esbuild", "prisma", "sharp"]
   }
 }
