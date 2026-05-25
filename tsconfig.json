@@ -1,17 +1,5 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "esModuleInterop": true,
-    "strict": true,
-    "outDir": "dist",
-    "rootDir": "src",
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "declaration": true
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "extends": "./packages/typescript-config/server.json",
+  "include": [],
+  "exclude": ["node_modules"]
 }
