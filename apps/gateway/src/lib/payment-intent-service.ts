@@ -5,6 +5,9 @@ import {
   getPaymentIntentByIdAndMerchant,
   updatePaymentIntentStatus,
   createPaymentMethod,
+  getPaymentMethodByIdAndMerchant,
+  getLatestCitWithSetupFutureUsage,
+  getAnyPaymentIntentForPaymentMethod,
 } from "@repo/dal"
 import { PaymentIntentStatus } from "@repo/database"
 
@@ -30,6 +33,33 @@ export interface PaymentIntentServiceDeps {
   resolveMerchant: ResolveMerchantFn
 }
 
+/** Helper to check if raw request body has three_d_secure field */
+function hasThreeDS(body: unknown): boolean {
+  return body !== null && typeof body === "object" && "three_d_secure" in body
+}
+
+/** Helper to extract payment_method type from raw body before Zod validation */
+function rawPaymentMethodType(body: unknown): string | undefined {
+  if (body === null || typeof body !== "object") return undefined
+  const pm = (body as Record<string, unknown>).payment_method
+  if (pm === null || typeof pm !== "object") return undefined
+  return (pm as Record<string, unknown>).type as string | undefined
+}
+
+function payFacBlock(payFac: {
+  schemeId: string
+  subMerchant: {
+    reference: string
+    name: string
+    address: Record<string, unknown>
+  }
+}) {
+  return {
+    schemeId: payFac.schemeId,
+    subMerchant: payFac.subMerchant,
+  }
+}
+
 export async function handleCreatePaymentIntent(
   body: unknown,
   apiKey: string,
@@ -45,6 +75,11 @@ export async function handleCreatePaymentIntent(
       { status: 401 },
     )
   }
+
+  // 1a. Detect potential MIT before validation
+  const isCardToken = rawPaymentMethodType(body) === "card_token"
+  const hasThreeD = hasThreeDS(body)
+  const isMitCandidate = isCardToken && !hasThreeD
 
   // 2. Validate input
   const parsed = createPaymentIntentSchema.safeParse(body)
@@ -67,6 +102,15 @@ export async function handleCreatePaymentIntent(
   const currency = input.currency.toUpperCase()
   const entity = merchant.entity
   const payFac = merchant.payFacConfig
+
+  // ─── MIT Pathway ────────────────────────────────────────────────
+  if (isMitCandidate) {
+    return handleMitPayment(
+      piId, input, merchant, entity, payFac, deps.wpCall,
+    )
+  }
+
+  // ─── CIT Pathway (existing) ─────────────────────────────────────
 
   // 3. Create initial PI record
   await createPaymentIntent({
@@ -151,9 +195,35 @@ export async function handleCreatePaymentIntent(
       )
     }
   } else {
-    // card_token: lookup existing payment method
-    // In this slice, we trust the token ID — full lookup would use DAL
-    tokenHref = `/tokens/${input.payment_method.token}`
+    // card_token CIT (e.g., with three_d_secure present)
+    const existingPm = await getPaymentMethodByIdAndMerchant(
+      input.payment_method.token,
+      merchant.merchantId,
+    )
+    if (!existingPm) {
+      await updatePaymentIntentStatus({
+        id: piId,
+        status: PaymentIntentStatus.payment_failed,
+        failureCode: "token_invalid",
+        failureMessage: "Payment method token not found",
+      })
+      return Response.json(
+        {
+          id: piId,
+          object: "payment_intent",
+          amount: input.amount,
+          currency,
+          status: "payment_failed",
+          failure_code: "token_invalid",
+          failure_message: "Payment method token not found",
+          payment_method_details: { type: "card", card: maskCard(null, null) },
+        },
+        { status: 200 },
+      )
+    }
+    tokenHref = existingPm.tokenHref as string
+    cardBrand = (existingPm.brand as string) ?? null
+    cardLast4 = (existingPm.last4 as string) ?? null
     paymentMethodId = input.payment_method.token
 
     await updatePaymentIntentStatus({
@@ -230,10 +300,7 @@ export async function handleCreatePaymentIntent(
     transactionReference: piId,
     merchant: {
       entity,
-      paymentFacilitator: {
-        schemeId: payFac.schemeId,
-        subMerchant: payFac.subMerchant,
-      },
+      paymentFacilitator: payFacBlock(payFac),
     },
     instruction: {
       requestAutoSettlement: { enabled: requestAutoSettlement },
@@ -331,6 +398,228 @@ export async function handleCreatePaymentIntent(
         status: "payment_failed",
         failure_code: "authorization_error",
         failure_message: "Authorization request failed",
+        payment_method_details: { type: "card", card: maskCard(cardBrand, cardLast4) },
+      },
+      { status: 200 },
+    )
+  }
+}
+
+// ─── MIT Payment Handler ──────────────────────────────────────────
+
+async function handleMitPayment(
+  piId: string,
+  input: CreatePaymentIntentInput,
+  merchant: { merchantId: string },
+  entity: string,
+  payFac: { schemeId: string; subMerchant: { reference: string; name: string; address: Record<string, unknown> } },
+  wpCall: WpCallFn,
+) {
+  const currency = input.currency.toUpperCase()
+  const tokenId = input.payment_method.type === "card_token"
+    ? input.payment_method.token
+    : ""
+
+  // MIT step 1: Create initial PI record
+  await createPaymentIntent({
+    id: piId,
+    merchantId: merchant.merchantId,
+    amount: input.amount,
+    currency,
+    status: PaymentIntentStatus.processing,
+    captureMethod: input.capture_method,
+    description: input.description ?? null,
+    statementDescriptor: input.statement_descriptor ?? null,
+    setupFutureUsage: input.setup_future_usage ?? null,
+    customerEmail: input.customer?.email ?? null,
+    customerIpAddress: input.customer?.ip_address ?? null,
+    shipping: (input.shipping as Record<string, unknown>) ?? null,
+    metadata: (input.metadata as Record<string, unknown>) ?? null,
+  })
+
+  // MIT step 2: Lookup token → worldpayTokenHref
+  const paymentMethod = await getPaymentMethodByIdAndMerchant(tokenId, merchant.merchantId)
+  if (!paymentMethod) {
+    await updatePaymentIntentStatus({
+      id: piId,
+      status: PaymentIntentStatus.payment_failed,
+      failureCode: "token_invalid",
+      failureMessage: "Payment method token not found or has been deleted",
+    })
+    return Response.json(
+      {
+        error: {
+          code: "token_invalid",
+          message: "Payment method token not found or has been deleted",
+        },
+      },
+      { status: 400 },
+    )
+  }
+
+  const tokenHref = paymentMethod.tokenHref as string
+  const cardBrand = (paymentMethod.brand as string) ?? null
+  const cardLast4 = (paymentMethod.last4 as string) ?? null
+
+  // MIT step 3: Lookup CIT record → verify setup_future_usage, get schemeReference
+  const citRecord = await getLatestCitWithSetupFutureUsage(tokenId, merchant.merchantId)
+  if (!citRecord) {
+    // Distinguish: no CIT at all vs CIT without off_session setup
+    const anyPi = await getAnyPaymentIntentForPaymentMethod(tokenId, merchant.merchantId)
+    if (!anyPi) {
+      await updatePaymentIntentStatus({
+        id: piId,
+        status: PaymentIntentStatus.payment_failed,
+        failureCode: "mit_requires_cit",
+        failureMessage: "No prior CIT payment found for this token",
+      })
+      return Response.json(
+        {
+          error: {
+            code: "mit_requires_cit",
+            message: "No prior CIT payment found for this token",
+          },
+        },
+        { status: 400 },
+      )
+    }
+
+    await updatePaymentIntentStatus({
+      id: piId,
+      status: PaymentIntentStatus.payment_failed,
+      failureCode: "mit_not_setup",
+      failureMessage: "Token was not set up for off-session payments",
+    })
+    return Response.json(
+      {
+        error: {
+          code: "mit_not_setup",
+          message: "Token was not set up for off-session payments",
+        },
+      },
+      { status: 400 },
+    )
+  }
+
+  const schemeReference = citRecord.schemeReference as string
+
+  // MIT step 4: Link PI to token + start authorizing
+  await updatePaymentIntentStatus({
+    id: piId,
+    status: PaymentIntentStatus.authorizing,
+    paymentMethodId: tokenId,
+  })
+
+  // MIT step 5: POST /cardPayments/merchantInitiatedTransactions
+  // SKIP: Tokenization, FraudSight, DDC, 3DS
+  // Auto-capture by default
+  const requestAutoSettlement = input.capture_method !== "manual"
+  const narrative = input.statement_descriptor
+    ? { line1: input.statement_descriptor.substring(0, 24) }
+    : undefined
+
+  const mitBody: Record<string, unknown> = {
+    transactionReference: piId,
+    merchant: {
+      entity,
+      paymentFacilitator: payFacBlock(payFac),
+    },
+    instruction: {
+      requestAutoSettlement: { enabled: requestAutoSettlement },
+      value: { amount: input.amount, currency },
+      paymentInstrument: {
+        type: "card/token",
+        href: tokenHref,
+      },
+      customerAgreement: {
+        type: "unscheduled",
+        storedCardUsage: "subsequent",
+        schemeReference,
+      },
+      ...(narrative ? { narrative } : {}),
+    },
+    channel: "ecom",
+  }
+
+  try {
+    const mitResult = (await wpCall(
+      "/cardPayments/merchantInitiatedTransactions",
+      "payments-v7",
+      { body: mitBody },
+    )) as {
+      outcome?: string
+      payment?: { id?: string }
+      _links?: Record<string, unknown>
+      refusal?: { code?: string; description?: string }
+    }
+
+    if (mitResult.outcome === "authorized" || mitResult.outcome === "sentForSettlement") {
+      const finalStatus =
+        input.capture_method === "manual"
+          ? PaymentIntentStatus.requires_capture
+          : PaymentIntentStatus.succeeded
+
+      await updatePaymentIntentStatus({
+        id: piId,
+        status: finalStatus,
+        worldpayPaymentId: mitResult.payment?.id ?? null,
+        linkData: (mitResult._links as Record<string, unknown>) ?? null,
+      })
+
+      return Response.json(
+        {
+          id: piId,
+          object: "payment_intent",
+          amount: input.amount,
+          currency,
+          status: input.capture_method === "manual" ? "requires_capture" : "succeeded",
+          capture_method: input.capture_method,
+          payment_method_details: { type: "card", card: maskCard(cardBrand, cardLast4) },
+          created: new Date().toISOString(),
+        },
+        { status: 200 },
+      )
+    }
+
+    // MIT refused
+    await updatePaymentIntentStatus({
+      id: piId,
+      status: PaymentIntentStatus.payment_failed,
+      worldpayPaymentId: mitResult.payment?.id ?? null,
+      failureCode: mitResult.refusal?.code ?? "refused",
+      failureMessage: mitResult.refusal?.description ?? "Payment refused",
+    })
+
+    return Response.json(
+      {
+        id: piId,
+        object: "payment_intent",
+        amount: input.amount,
+        currency,
+        status: "payment_failed",
+        failure_code: mitResult.refusal?.code ?? "refused",
+        failure_message: mitResult.refusal?.description ?? "Payment refused",
+        payment_method_details: { type: "card", card: maskCard(cardBrand, cardLast4) },
+      },
+      { status: 200 },
+    )
+  } catch {
+    await updatePaymentIntentStatus({
+      id: piId,
+      status: PaymentIntentStatus.payment_failed,
+      failureCode: "authorization_error",
+      failureMessage: "MIT authorization request failed",
+    })
+
+    return Response.json(
+      {
+        id: piId,
+        object: "payment_intent",
+        amount: input.amount,
+        currency,
+        status: "payment_failed",
+        failure_code: "authorization_error",
+        failure_message: "MIT authorization request failed",
         payment_method_details: { type: "card", card: maskCard(cardBrand, cardLast4) },
       },
       { status: 200 },

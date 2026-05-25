@@ -23,3 +23,9 @@ export async function createPaymentMethod(input: CreatePaymentMethodInput) {
 export async function getPaymentMethodById(id: string) {
   return database.paymentMethod.findUnique({ where: { id } })
 }
+
+export async function getPaymentMethodByIdAndMerchant(id: string, merchantId: string) {
+  return database.paymentMethod.findFirst({
+    where: { id, merchantId },
+  })
+}

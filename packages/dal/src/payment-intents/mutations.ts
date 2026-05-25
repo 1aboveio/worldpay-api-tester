@@ -60,3 +60,40 @@ export async function updatePaymentIntentStatus(input: UpdatePaymentIntentStatus
     data,
   })
 }
+
+/**
+ * Find the most recent CIT PaymentIntent for a given payment method token
+ * that has setup_future_usage = "off_session" and a valid schemeReference.
+ * Used by MIT flow to verify the token is set up for off-session payments.
+ */
+export async function getLatestCitWithSetupFutureUsage(
+  paymentMethodId: string,
+  merchantId: string,
+) {
+  return database.paymentIntent.findFirst({
+    where: {
+      paymentMethodId,
+      merchantId,
+      setupFutureUsage: "off_session",
+      schemeReference: { not: null },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+}
+
+/**
+ * Check if any PaymentIntent (CIT) exists for a given payment method.
+ * Used to distinguish "no CIT at all" (mit_requires_cit) from
+ * "CIT exists but not set up" (mit_not_setup).
+ */
+export async function getAnyPaymentIntentForPaymentMethod(
+  paymentMethodId: string,
+  merchantId: string,
+) {
+  return database.paymentIntent.findFirst({
+    where: {
+      paymentMethodId,
+      merchantId,
+    },
+  })
+}

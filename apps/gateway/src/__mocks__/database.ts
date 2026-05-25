@@ -41,6 +41,29 @@ function withDates(data: Record<string, unknown>): Record<string, unknown> {
   }
 }
 
+/** Simple matcher for Prisma where clauses used in tests */
+function matchesWhere(record: Record<string, unknown>, where: Record<string, unknown>): boolean {
+  for (const [key, value] of Object.entries(where)) {
+    const recordVal = record[key]
+    if (value === null) {
+      if (recordVal !== null) return false
+    } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      const op = value as Record<string, unknown>
+      if ("not" in op) {
+        const notVal = op.not
+        if (notVal === null) {
+          if (recordVal === null) return false
+        } else if (recordVal === notVal) return false
+      } else {
+        if (recordVal !== value) return false
+      }
+    } else {
+      if (recordVal !== value) return false
+    }
+  }
+  return true
+}
+
 export const database = {
   paymentIntent: {
     create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -48,17 +71,53 @@ export const database = {
       store.paymentIntents.set(data.id as string, record)
       return record
     },
-    findUnique: async ({ where }: { where: { id: string } }) => {
+    findUnique: async ({ where, include }: { where: { id: string }; include?: { paymentMethod?: boolean } }) => {
       const pi = store.paymentIntents.get(where.id)
       if (!pi) return null
-      return { ...withDates(pi), paymentMethod: null }
+      const result = { ...withDates(pi) } as Record<string, unknown>
+      if (include?.paymentMethod) {
+        const pmId = pi.paymentMethodId as string | undefined
+        result.paymentMethod = pmId ? store.paymentMethods.get(pmId) ?? null : null
+      }
+      return result
     },
-    findFirst: async ({ where }: { where: { id: string; merchantId: string } }) => {
-      const pi = store.paymentIntents.get(where.id)
-      if (!pi || pi.merchantId !== where.merchantId) return null
-      const pmId = pi.paymentMethodId as string | undefined
-      const pm = pmId ? store.paymentMethods.get(pmId) ?? null : null
-      return { ...withDates(pi), paymentMethod: pm }
+    findFirst: async (args: {
+      where: Record<string, unknown>
+      include?: { paymentMethod?: boolean }
+      orderBy?: Record<string, string>
+    }) => {
+      let matches: Array<{ record: Record<string, unknown>; createdAt: string }> = []
+
+      for (const [, pi] of store.paymentIntents) {
+        if (matchesWhere(pi, args.where)) {
+          matches.push({
+            record: pi,
+            createdAt: (pi.createdAt as Date)?.toISOString() ?? "",
+          })
+        }
+      }
+
+      // Sort by orderBy
+      if (args.orderBy) {
+        for (const [field, dir] of Object.entries(args.orderBy)) {
+          matches.sort((a, b) => {
+            const aVal = a.record[field] ?? ""
+            const bVal = b.record[field] ?? ""
+            if (dir === "desc") return String(bVal).localeCompare(String(aVal))
+            return String(aVal).localeCompare(String(bVal))
+          })
+        }
+      }
+
+      const pi = matches[0]?.record
+      if (!pi) return null
+
+      const result = { ...withDates(pi) } as Record<string, unknown>
+      if (args.include?.paymentMethod) {
+        const pmId = pi.paymentMethodId as string | undefined
+        result.paymentMethod = pmId ? store.paymentMethods.get(pmId) ?? null : null
+      }
+      return result
     },
     update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
       const existing = store.paymentIntents.get(where.id) ?? {}
@@ -74,6 +133,14 @@ export const database = {
     },
     findUnique: async ({ where }: { where: { id: string } }) => {
       return store.paymentMethods.get(where.id) ?? null
+    },
+    findFirst: async ({ where }: { where: Record<string, unknown> }) => {
+      for (const [, pm] of store.paymentMethods) {
+        if (matchesWhere(pm, where)) {
+          return pm
+        }
+      }
+      return null
     },
   },
 }
