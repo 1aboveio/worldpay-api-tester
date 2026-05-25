@@ -172,6 +172,7 @@ GET    /v1/statements                         对账单
 
 - [ ] 后台配置：`fraudsight.enabled: true/false`
 - [ ] `false` 时跳过高风险拒绝，所有支付直接放行
+- [ ] SCA 豁免配置: `fraudsight.exemption.enabled` (默认 true), `fraudsight.exemption.capability` (默认 `authorizationAndAuthentication`)
 - [ ] 配置变更实时生效（或 < 5 分钟）
 
 **优先级**: P1
@@ -247,7 +248,7 @@ curl -H "Authorization: Bearer sk_test_YOUR_TEST_KEY" \
     }
   },
   "confirm": true,
-  "three_d_secure": { "enabled": true, "return_url": "https://myshop.com/checkout/complete" },
+  "three_d_secure": { "enabled": true, "return_url": "https://myshop.com/checkout/complete" }  // 注: 此 return_url 是商户侧回调; 网关内部向 Worldpay 传 Gateway 自己的 /v1/3ds/callback,
   "customer": { "email": "john@example.com", "ip_address": "192.168.1.1" }
 }
 ```
@@ -259,7 +260,7 @@ curl -H "Authorization: Bearer sk_test_YOUR_TEST_KEY" \
   "amount": 250, "currency": "gbp",
   "payment_method": { "type": "card_token", "token": "pm_abc123def456" },
   "confirm": true,
-  "three_d_secure": { "enabled": true, "return_url": "https://myshop.com/checkout/complete" }
+  "three_d_secure": { "enabled": true, "return_url": "https://myshop.com/checkout/complete" }  // 注: 此 return_url 是商户侧回调; 网关内部向 Worldpay 传 Gateway 自己的 /v1/3ds/callback
 }
 ```
 
@@ -326,11 +327,14 @@ curl -H "Authorization: Bearer sk_test_YOUR_TEST_KEY" \
     "three_d_secure_challenge": {
       "challenge_url": "https://issuer-bank.com/acs/challenge",
       "challenge_jwt": "eyJhbGciOiJIUzI1NiJ9...",
-      "challenge_payload": "{...}"
+      "challenge_payload": "{...}",
+      "session_id": "3ds_sess_abc123"
     }
   }
 }
 ```
+
+> `session_id` 由 Gateway 生成，用于关联 challenge 回调。challenge 完成后 issuer 重定向到 Gateway `/v1/3ds/callback?pi_id=xxx&session_id=yyy`。
 
 #### 响应 — 3DS 不可用 (无 liability shift)
 
