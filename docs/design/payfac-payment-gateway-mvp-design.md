@@ -1099,6 +1099,181 @@ GET  /v1/payment_intents/{id}
 
 > **不再需要独立的 3DS Session 端点**。DDC 结果通过 `POST /payment_intents/{id}/device_data` 回传，challenge 结果通过 Gateway 回调自动处理。商户只需轮询 PaymentIntent 状态。
 
+### 6.6 DDC 自动加载 vs 按需采集：设计权衡
+
+#### 6.6.1 自动加载 DDC = 100% 采集？
+
+**不是。** Stripe 的做法是"懒触发 + 时间窗口重叠"，而非页面加载即跑：
+
+```
+时间轴 →
+
+用户进入 checkout 页面         Stripe.js 已加载，不跑 DDC
+         │
+用户 focus 卡号输入框          💡 触发 DDC 初始化
+         │                    └─ 隐藏 iframe 开始运行
+用户输入卡号                                    │
+用户输入有效期  ────────── DDC 并行运行中 ──────│
+用户输入 CVC                                   │
+         │                    └─ DDC 完成 (2-5s)
+用户点击 "支付"               sessionId 已就绪 ✓
+```
+
+**关键数据**：
+
+| 指标 | 数值 |
+|------|------|
+| 用户手动输完卡号 + 有效期 + CVC | ~10-15 秒 |
+| DDC 采集耗时 | 2-5 秒 |
+| 重叠窗口 | 100% 覆盖（DDC 远快于手动输入） |
+| 极速场景（自动填充 / 密码管理器） | 输入 3 秒 + DDC 最多等 2 秒 |
+| Apple Pay / Google Pay | DDC 跳过（钱包已有设备指纹） |
+
+#### 6.6.2 浪费率分析
+
+Stripe 接受约 30% 的 DDC 调用浪费：
+
+```
+100 个用户进入 checkout
+  ├─ 70 个完成支付         → DDC sessionId 被使用
+  ├─ 20 个中途放弃         → DDC 浪费（~5KB 网络 + 50ms CPU）
+  └─ 10 个选其他支付方式    → DDC 浪费
+```
+
+> Stripe 的 tradeoff 逻辑：一次 DDC 的网络/计算开销远小于一笔 chargeback 的损失。宁可浪费 30% 调用，不可让真实买家在支付时多等 3 秒。
+
+#### 6.6.3 并行 vs 串行：性能对比
+
+**当前 MVP 实现（串行，每步等待）**：
+
+```
+POST /payment_intents ─┐
+  Tokenize      (1s)   │
+  FraudSight    (2s)   ├─ 后端串行 ~5s
+  DDC Init      (1s)   │
+  → 返回 DDC URL        │
+                       ┘
+浏览器 DDC      (3s)   ← 用户可感知等待！
+  → 回传 sessionId
+                       ┌─ 后端串行 ~3s
+  Authenticate  (2s)   │
+  Authorize     (1s)   │
+                       ┘
+总耗时: ~11s (用户感知 ~5s 延迟)
+```
+
+**优化后（SDK 并行 + 预取）**：
+
+```
+POST /payment_intents ─┐
+  Tokenize      (1s)   │
+  FraudSight    (2s)   ├─ 后端并行
+  DDC Init      (1s)   │
+  → 返回 DDC URL ───────── 浏览器 DDC (3s, 并行)
+  Authenticate  (2s) ←─┤ (等 sessionId 就绪)
+  Authorize     (1s)   │
+                       ┘
+总耗时: ~6s (用户感知 0s 额外延迟，DDC 与后端重叠)
+```
+
+**差异**：用户感知延迟从 ~5s 降到 ~0s（DDC 的 3s 被后端 Tokenize/FraudSight 的 5s 完全覆盖）。
+
+#### 6.6.4 技术实现：SDK 预取模式
+
+```typescript
+// ─── @payfac/js SDK 核心 ───
+
+class PayFacSDK {
+  private ddcPromise: Promise<string> | null = null;
+  private ddcSessionId: string | null = null;
+
+  /**
+   * PaymentIntent 创建后立即调用。
+   * DDC 与后续后端步骤并行执行。
+   */
+  async warmupDDC(ddcUrl: string, ddcJwt: string): Promise<void> {
+    if (this.ddcSessionId) return; // 已缓存
+    if (this.ddcPromise) return;   // 正在运行
+
+    this.ddcPromise = new Promise((resolve) => {
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'display:none;width:0;height:0;border:0';
+      iframe.src = ddcUrl;
+      document.body.appendChild(iframe);
+
+      const timeout = setTimeout(() => resolve(''), 10000); // 超时降级
+
+      iframe.onload = () => {
+        const form = iframe.contentDocument!.createElement('form');
+        form.method = 'POST';
+        form.action = ddcUrl;
+        form.innerHTML = `<input name="JWT" value="${ddcJwt}" />`;
+        form.submit();
+      };
+
+      window.addEventListener('message', (event) => {
+        if (event.origin !== 'https://secure.worldpay.com') return;
+        clearTimeout(timeout);
+        this.ddcSessionId = event.data.sessionId;
+        resolve(this.ddcSessionId);
+      }, { once: true });
+    });
+  }
+
+  /** 支付时调用。DDC 大概率已就绪 */
+  async confirm(piId: string): Promise<void> {
+    const sessionId = this.ddcSessionId ?? (await this.ddcPromise) ?? '';
+    // 即使 DDC 未完成（超时降级），也继续支付
+    await fetch(`/v1/payment_intents/${piId}/device_data`, {
+      method: 'POST',
+      body: JSON.stringify({ collection_reference: sessionId }),
+    });
+  }
+}
+```
+
+#### 6.6.5 动态 3DS 开关处理
+
+```
+three_d_secure.enabled = true           three_d_secure.enabled = false
+─────────────────────────────           ─────────────────────────────
+
+Tokenize                                Tokenize
+FraudSight                              FraudSight
+DDC Init ──▶ 浏览器 DDC                  ↓ (跳过 DDC Init + DDC)
+Authenticate (含 DDC sessionId)         ↓ (跳过 Authenticate)
+Authorize                               Authorize ──▶ 直接授权，
+                                             无 liability shift
+
+耗时: ~6s                              耗时: ~3s
+```
+
+当 `three_d_secure.enabled = false`，Gateway 内部的 3DS 编排器短路跳过 DDC Init + Authenticate 两步，直接从 FraudSight 跳到 Authorize。不需要 SDK 做任何判断——对商户代码完全透明。
+
+#### 6.6.6 演进策略
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  MVP (当前)                                                     │
+│  · 串行 DDC                                                      │
+│  · 商户手动处理 iframe + postMessage                             │
+│  · 用户感知 ~5s 延迟                                              │
+│  · 商户代码 ~50 行                                                │
+├─────────────────────────────────────────────────────────────────┤
+│  Phase 2: @payfac/js SDK                                       │
+│  · SDK.warmupDDC() 并行化                                        │
+│  · SDK.confirm() 自动等待 DDC                                    │
+│  · 用户感知 0s 延迟（DDC 与 Tokenize 重叠）                        │
+│  · 商户代码 ~5 行: `await payfac.pay({...})`                     │
+├─────────────────────────────────────────────────────────────────┤
+│  Phase 3: 对标 Stripe.js                                        │
+│  · SDK 页面加载时自动预热 DDC                                      │
+│  · DDC 与用户输卡号并行（最佳体验）                                  │
+│  · ~30% 浪费率，但 0 延迟                                          │
+│  · 商户代码 ~3 行                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 ---
 
 ## 7. FraudSight 后台策略
