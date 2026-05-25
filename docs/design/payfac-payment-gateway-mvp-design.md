@@ -91,11 +91,54 @@
 | **风控评估** | FraudSight v1 | `POST /fraudsight/assessment` |
 | **CIT 授权** | Card Payments v7 | `POST /cardPayments/customerInitiatedTransactions` |
 | **MIT 授权** | Card Payments v7 | `POST /cardPayments/merchantInitiatedTransactions` |
-| **请款** | Card Payments v7 | `POST /payments/settlements/{linkData}` |
-| **退款** | Card Payments v7 | `POST /payments/settlements/refunds/{linkData}` |
-| **取消** | Card Payments v7 | `POST /payments/authorizations/cancellations/{linkData}` |
-| **交易查询** | Payment Queries v1 | `GET /paymentQueries/payments` |
+| **退款 (全额)** | Card Payments v7 | `POST /payments/settlements/refunds/full/{linkData}` |
+| **退款 (部分)** | Card Payments v7 | `POST /payments/settlements/refunds/partials/{linkData}` |
+| **请款 (全额)** | Card Payments v7 | `POST /payments/settlements/{linkData}` |
+| **请款 (部分)** | Card Payments v7 | `POST /payments/settlements/partials/{linkData}` |
+| **取消 (全额)** | Card Payments v7 | `POST /payments/authorizations/cancellations/{linkData}` |
+| **取消 (部分)** | Card Payments v7 | `POST /payments/authorizations/cancellations/partials/{linkData}` |
+| **冲正** | Card Payments v7 | `POST /payments/sales/reversals/{linkData}` |
+| **支付状态恢复** | Card Payments v7 | `GET /payments/events` |
+| **交易查询 (列表)** | Payment Queries v1 | `GET /paymentQueries/payments` |
+| **交易查询 (单笔)** | Payment Queries v1 | `GET /paymentQueries/payments/{paymentId}` |
 | **对账** | Statements 2025-01-01 | `GET /accounts/statements` |
+
+### 2.1.1 HATEOAS linkData 说明
+
+Worldpay Card Payments 授权成功后返回 `_links` 对象，内含后续操作的完整加密 URL（即 `{linkData}`）：
+
+```json
+// CIT 授权成功后响应中的 _links
+{
+  "_links": {
+    "cardPayments:settle":        { "href": ".../payments/settlements/{linkData}" },
+    "cardPayments:partialSettle": { "href": ".../payments/settlements/partials/{linkData}" },
+    "cardPayments:cancel":        { "href": ".../payments/authorizations/cancellations/{linkData}" },
+    "cardPayments:partialCancel": { "href": ".../payments/authorizations/cancellations/partials/{linkData}" },
+    "cardPayments:refund":        { "href": ".../payments/settlements/refunds/full/{linkData}" },
+    "cardPayments:partialRefund": { "href": ".../payments/settlements/refunds/partials/{linkData}" },
+    "cardPayments:reverse":       { "href": ".../payments/sales/reversals/{linkData}" },
+    "cardPayments:events":        { "href": ".../payments/events/{linkData}" }
+  }
+}
+```
+
+> Gateway 存储所有 `_links` href，后续操作直接使用完整加密 URL。
+
+### 2.1.2 Payment Queries 查询参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `startDate` | ISO 8601 | ✅ | 开始时间 |
+| `endDate` | ISO 8601 | ✅ | 结束时间 |
+| `pageSize` | integer | — | 每页数量 (最大 300) |
+| `currency` | string | — | 三位币种 |
+| `entityReferences` | string | — | Entity 引用 (逗号分隔) |
+| `transactionReference` | string | — | 按交易引用精确查询 |
+| `last4Digits` | string | — | 卡末四位 |
+| `receivedEvents` | string | — | 事件类型筛选 |
+
+> 按 `transactionReference` 查询时不需 `startDate`/`endDate`。
 
 ### 2.2 PayFac 信息自动注入
 
@@ -162,6 +205,25 @@ Authorization: Bearer sk_live_YOUR_MERCHANT_SECRET_KEY
 
 > **注意**：3DS DDC 结果通过 `POST /payment_intents/{id}/device_data` 回传，Challenge 回调由 Gateway `/v1/3ds/callback` 自动处理。商户只需调 PaymentIntent 接口，无需感知 3DS 内部细节。
 
+### 3.2.1 幂等性
+
+所有写操作支持 `Idempotency-Key` 请求头：
+
+```
+POST /v1/payment_intents
+Idempotency-Key: order-12345-2026-05-25-001
+```
+
+| 规则 | 说明 |
+|------|------|
+| 作用范围 | 同一 API Key 下全局唯一 |
+| TTL | 24 小时。超时后相同 key 视为新请求 |
+| 冲突处理 | 返回首次请求的缓存响应 (HTTP 200 + 原 status) |
+| 适用端点 | `POST /payment_intents`, `POST /refunds`, `POST /capture`, `POST /cancel`, `POST /confirm` |
+| Worldpay 层 | `transactionReference` 作为 Worldpay 侧二级幂等 |
+
+> **关键场景**：网络超时时重试不会产生重复扣款。Gateway 崩溃后重启，未落盘的支付可通过 `GET /payments/events` 恢复。
+
 ### 3.3 Payment Intent — 统一支付接口
 
 #### 3.3.1 创建 PaymentIntent
@@ -170,15 +232,15 @@ Authorization: Bearer sk_live_YOUR_MERCHANT_SECRET_KEY
 POST /v1/payment_intents
 ```
 
-**Omni 统一请求体**：
+**Omni 统一请求体**。三种 payment_method 方式任选其一：
+
+**方式 1：直接传卡号（网关即时 tokenize）**
 
 ```json
 {
   "amount": 250,
   "currency": "gbp",
-
   "payment_method": {
-
     "type": "card",
     "card": {
       "number": "4444333322221111",
@@ -193,46 +255,46 @@ POST /v1/payment_intents
         "country": "GB"
       }
     }
-
   },
-
-  "payment_method": {
-
-    "type": "card_token",
-    "token": "pm_abc123def456"
-
-  },
-
   "confirm": true,
   "capture_method": "automatic",
   "description": "Order #12345",
   "statement_descriptor": "MYSHOP.CO",
-
-  "three_d_secure": {
-    "enabled": true,
-    "return_url": "https://merchant.com/3ds/callback",
-    "challenge_preference": "noPreference"
-  },
-
-  "customer": {
-    "email": "user@example.com",
-    "ip_address": "192.168.1.1"
-  },
-  "shipping": {
-    "name": "John Doe",
-    "address": {
-      "line1": "10 Downing Street",
-      "city": "London",
-      "postal_code": "SW1A 2AA",
-      "country": "GB"
-    }
-  },
-
+  "three_d_secure": { "enabled": true, "return_url": "https://merchant.com/3ds/callback" },
+  "customer": { "email": "user@example.com", "ip_address": "192.168.1.1" },
   "setup_future_usage": "off_session",
-  "metadata": {
-    "order_id": "12345"
-  }
+  "metadata": { "order_id": "12345" }
 }
+```
+
+**方式 2：使用已存储的卡 token**
+
+```json
+{
+  "amount": 250,
+  "currency": "gbp",
+  "payment_method": {
+    "type": "card_token",
+    "token": "pm_abc123def456"
+  },
+  "confirm": true
+}
+```
+
+**方式 3：MIT 循环扣款（需 CIT 时 setup_future_usage 前置）**
+
+```json
+{
+  "amount": 250,
+  "currency": "gbp",
+  "payment_method": {
+    "type": "card_token",
+    "token": "pm_abc123def456"
+  },
+  "confirm": true
+  // 无 three_d_secure 字段 → Gateway 识别为 MIT, 跳过 3DS + FraudSight
+}
+```
 ```
 
 **字段说明**：
@@ -292,6 +354,9 @@ POST /v1/payment_intents
   "currency": "gbp",
   "status": "succeeded",
   "capture_method": "automatic",
+  "three_d_secure": {
+    "status": "authenticated"
+  },
   "payment_method_details": {
     "type": "card",
     "card": {
@@ -324,7 +389,7 @@ POST /v1/payment_intents
 }
 ```
 
-> 前端运行隐藏 iframe DDC (步骤见 [§6.2](#62-ddc-device-data-collection-设备指纹))，完成后 `POST /v1/payment_intents/{id}/device_data` 回传 sessionId。
+> 前端运行隐藏 iframe DDC，完成后 `POST /v1/payment_intents/{id}/device_data` 回传 `collectionReference`。
 
 **需 3DS Challenge** (`status: "requires_action"`)：
 
@@ -448,21 +513,7 @@ POST /v1/payment_methods
 
 > 也可用在 PaymentIntent 中直接传 `payment_method.type: "card"` 即时 tokenize，无需预先创建。
 
-### 3.5 3DS Session (前端)
-
-```
-POST /v1/3ds_sessions
-```
-
-由 PaymentIntent 返回 `requires_action` 后，前端调用此接口获取 challenge 所需数据。
-
-```
-POST /v1/3ds_sessions/{id}/challenge_result
-```
-
-前端完成 challenge iframe 后提交结果。详见 [§6. 3DS 前端流程](#6-3ds-前端集成流程)。
-
-### 3.6 Refund
+### 3.5 Refund
 
 ```
 POST /v1/refunds
@@ -493,7 +544,10 @@ POST /v1/refunds
 ### 3.7 Statements (对账)
 
 ```
-GET /v1/statements?from=2026-05-20T00:00:00Z&to=2026-05-25T23:59:59Z
+GET /v1/statements?from_date=2026-05-20T00:00:00Z&to_date=2026-05-25T23:59:59Z&page=1
+
+Worldpay 实际参数: startDate, endDate (ISO 8601), accountNumber (16位),
+                  pageNumber, pageSize (最大500)
 ```
 
 **响应**：
@@ -620,7 +674,6 @@ GET /v1/statements?from=2026-05-20T00:00:00Z&to=2026-05-25T23:59:59Z
 | `REQUIRES_DEVICE_DATA` | 需前端运行 DDC | 前端运行隐藏 iframe → 回传 sessionId |
 | `AUTHENTICATING` | (内部) 3DS 认证中 | — |
 | `REQUIRES_ACTION` | 需 3DS Challenge | 浏览器完成 challenge → Gateway 回调自动处理 |
-| `REQUIRES_DEVICE_DATA` | 需前端运行 DDC | 前端运行隐藏 iframe → POST /device_data 回传 sessionId |
 | `CHALLENGE_COMPLETED` | (内部) Challenge 验证完成 | — |
 | `AUTHORIZING` | (内部) 支付授权中 | — |
 | `REQUIRES_CAPTURE` | 已授权，等待请款 | `POST /capture` 或 `POST /cancel` |
@@ -763,6 +816,20 @@ Sub-merchant前端           Browser            PayFac Gateway           Issuer 
 
 ### 5.3 MIT 循环扣款 (Off-session)
 
+**前置条件**：CIT 支付时传入 `setup_future_usage: "off_session"`。
+
+CIT 授权响应中包含 `scheme.reference`，Gateway 存储该值用于后续 MIT：
+
+```json
+// CIT 授权响应关键字段
+{
+  "outcome": "authorized",
+  "scheme": {
+    "reference": "MCCOLXT1C0104  "    // ← Gateway 存储此值
+  }
+}
+```
+
 ```
 前提: CIT 支付时传入 setup_future_usage: "off_session"
 
@@ -808,13 +875,56 @@ POST /v1/refunds { payment_intent: "pi_...", amount: 250 }
   Scheduler (Cron)
        │
        ▼
-  GET /accounts/statements?fromDate=...&toDate=...
+  GET /accounts/statements?startDate=...&endDate=...&accountNumber=...
        │
        ▼
   Reconciliation Engine
   · 内部支付记录 ←→ Worldpay 对账单条目
   · 差异报告
 ```
+
+### 5.6 超时恢复
+
+当 Gateway 向 Worldpay 发起请求后超时（网络抖动、Worldpay 响应慢），不应直接重试授权（避免重复扣款）。恢复流程：
+
+```
+  Gateway 超时 (authorize / settle / refund)
+       │
+       ▼
+  标记 PaymentIntent 状态为 "unknown"
+       │
+       ▼
+  GET /payments/events/{linkData}   ← Worldpay 状态恢复端点
+       │
+       ├── 返回 authorized → 记录结果, 恢复状态
+       ├── 返回 refused    → 标记失败
+       └── 返回 404        → 原请求未到达 Worldpay, 可安全重试
+```
+
+### 5.7 错误处理策略
+
+| 场景 | HTTP | 处理方式 |
+|------|------|---------|
+| Worldpay 5xx | 502 | 不重试。标记 `processing`，异步通过 `/payments/events` 恢复 |
+| Worldpay 4xx (validation) | 400 | 直接返回错误。不重试 |
+| Worldpay 401/403 | 500 | 告警。凭证或权限问题 |
+| 网络超时 (< 5s) | — | 见 [§5.6 超时恢复](#56-超时恢复) |
+| FraudSight highRisk + block | 200 | `status: "payment_failed"`, `failure_code: "high_risk"` |
+| FraudSight review | 200 | 继续授权（默认 `action_on_review: proceed`）|
+| 3DS authenticationFailed | 200 | `status: "payment_failed"`, `failure_code: "3ds_failed"` |
+| CIT refused by issuer | 200 | `status: "payment_failed"` + refusal code |
+| 重复 Idempotency-Key | 200 | 返回首次缓存的响应 |
+
+### 5.8 MIT 路径（状态机补充）
+
+MIT 跳过 FraudSight、DDC、3DS 三步，直接走简化路径：
+
+```
+  TOKENIZED → AUTHORIZING → AUTHORIZED → CAPTURING → SUCCEEDED
+  (跳过: RISK_ASSESSING, DDC_INITIALIZING, AUTHENTICATING)
+```
+
+> Gateway 识别 MIT：`payment_method.type = "card_token"` 且请求中无 `three_d_secure` 字段，且 token 关联的 CIT 有 `setup_future_usage` 记录。
 
 ---
 
@@ -836,7 +946,7 @@ POST /v1/refunds { payment_intent: "pi_...", amount: 250 }
 │  ④ Authenticate → ⑤ Authorize → ⑥ Capture            │
 │                                                       │
 │  ┌─────────────┐  ┌──────────────┐                   │
-│  │ DDC Manager │  │ 3DS Session  │                   │
+│  │ DDC Manager │  │ Challenge   │                   │
 │  │ (隐藏 iframe)│  │  (challenge) │                   │
 │  └─────────────┘  └──────────────┘                   │
 └───────────────────────────────────────────────────────┘
@@ -1397,8 +1507,10 @@ FraudSight 的 SCA 豁免与 3DS 免挑战可同时生效：
 | Network Tokens | 二期 |
 | Verified Tokens | 二期 |
 | Account Updater | 二期 |
-| Webhook 推送 | 一期仅查询，二期加推模式 |
+| Webhook 推送 | 一期仅查询 + `/payments/events` 恢复，二期加推模式 |
 | 商户 Portal UI | 二期 |
+
+> **Webhook 降级方案**：MVP 不依赖 webhook。Gateway 定期调用 `GET /payments/events` 拉取状态变更，覆盖超时和崩溃恢复场景。支付查询间隔 ~30s（新支付）→ ~5min（稳定支付）。
 
 ---
 
@@ -1439,16 +1551,93 @@ FraudSight 的 SCA 豁免与 3DS 免挑战可同时生效：
 }
 ```
 
+### 10.2.1 3DS Authenticate 响应示例
+
+**Frictionless (免挑战)**:
+```json
+{
+  "outcome": "authenticated",
+  "transactionReference": "uniqueId",
+  "authentication": {
+    "version": "2.2.0",
+    "eci": "05",
+    "authenticationValue": "kBNHXUAy4+HT1gAMBSDajheBcxQh",
+    "transactionId": "b8fb4ecc-7e2e-4b1c-816d-0149849776b8"
+  }
+}
+```
+
+**Challenged (需挑战)**:
+```json
+{
+  "outcome": "challenged",
+  "transactionReference": "uniqueId",
+  "challenge": {
+    "reference": "uniqueChallengeRef12",
+    "url": "https://issuer-bank.com/acs/challenge",
+    "jwt": "eyJhbGci...",
+    "payload": "{...}"
+  }
+}
+```
+
+### 10.2.2 FraudSight 评估响应示例
+
+```json
+{
+  "outcome": "lowRisk",
+  "transactionReference": "uniqueId",
+  "score": 12.5,
+  "riskProfile": {
+    "href": "https://try.access.worldpay.com/riskProfile/eyJrIjoi..."
+  },
+  "exemption": {
+    "placement": "authorization",
+    "type": "lowValue"
+  }
+}
+```
+
+> Gateway 从响应中提取 `riskProfile.href`，注入到 CIT 授权请求的 `riskProfile` 字段。
+
+### 10.2.3 Gateway 字段 → Worldpay 字段映射
+
+| Gateway 字段 | Worldpay 字段 | 说明 |
+|-------------|--------------|------|
+| `statement_descriptor` | `instruction.narrative.line1` | 银行账单显示 |
+| `description` | 网关本地存储 + `transactionReference` | 不传给 Worldpay |
+| `customer.email` | FraudSight `riskData.account.email` | 风控用 |
+| `customer.ip_address` | FraudSight `deviceData.ipAddress` | 风控用 |
+| `shipping` | FraudSight `riskData.shipping` | 风控用 |
+| `metadata` | 网关本地存储 (JSONB) | Worldpay 不支持自由 metadata |
+| `currency` (小写) | → 转大写 `GBP` | 网关自动转换 |
+| `amount` (如 250) | `value.amount` (250) | 同单位, 无转换。JPY 等零小数币种按实际单位 |
+| `setup_future_usage: "off_session"` | `customerAgreement: { type: "cardOnFile", storedCardUsage: "first" }` | CIT 首次 |
+| MIT 后续 | `customerAgreement: { storedCardUsage: "subsequent" }` + 不带 `three_d_secure` | MIT |
+
 ### 10.3 测试环境
 
 | 项目 | 值 |
 |------|-----|
 | Base URL | `https://try.access.worldpay.com` |
-| 测试 Entity | `your_entity` (已验证) |
+| 测试 Entity | 配置化 (如 `your_entity`)，通过 `probe-entities.ts` 验证 |
 | 测试卡号 | `4444333322221111` (VISA credit) |
 | 测试卡有效期 | `05/2035` |
 | 测试 CVC | `123` |
 | Payment Queries 异步延迟 | 3~15 分钟 |
+
+### 10.3.1 自动请款实现策略
+
+`capture_method: automatic` (默认) 的实现方式：
+
+| 方式 | 说明 | 性能 | 可靠性 |
+|------|------|------|--------|
+| A: `requestAutoSettlement: { enabled: true }` | CIT 请求中直接要求 Worldpay 自动 settlement | 快 (1 次调用) | 高 (Worldpay 保证) |
+| B: 分开调用 settlement | 先 authorize → 再 POST /settlements | 多 1 次调用 | Gateway 控制粒度更高 |
+
+> **MVP 推荐方式 A**。CIT 请求中设置 `requestAutoSettlement: { enabled: true }`，Worldpay 返回 `outcome: "Sent for Settlement"`，无需额外 capture 调用。状态机简化为：`AUTHORIZING → SUCCEEDED`。
+>
+> `capture_method: manual` 时使用方式 B：`requestAutoSettlement: { enabled: false }` + 单独调 settlement。
 
 ### 10.4 MIT 关键字段
 
@@ -1465,13 +1654,16 @@ MIT (后续):
 
 ### 10.5 3DS 认证结果映射
 
-| WP Outcome | PaymentIntent Status |
-|------------|---------------------|
-| `authenticated` | → 继续 AUTHORIZING |
-| `challenged` | → `REQUIRES_ACTION` |
-| `notEnrolled` | → 继续 AUTHORIZING (无 3DS 保障) |
-| `unavailable` | → 继续 AUTHORIZING |
-| `authenticationFailed` | → `PAYMENT_FAILED` |
+| WP Outcome | PaymentIntent Status | Liability Shift |
+|------------|---------------------|-----------------|
+| `authenticated` | → 继续 AUTHORIZING | ✅ 有 |
+| `challenged` | → `REQUIRES_ACTION` | ⏳ 待 challenge 完成 |
+| `notEnrolled` | → 继续 AUTHORIZING | ❌ 无 (卡/发卡行不支持 3DS) |
+| `unavailable` | → 继续 AUTHORIZING | ❌ 无 (3DS 服务不可用) |
+| `authenticationFailed` | → `PAYMENT_FAILED` | ❌ 认证失败 |
+
+GateWay 在 PaymentIntent 响应中包含 `three_d_secure.status` 字段告知商户实际认证结果，
+帮助商户了解 chargeback liability shift 是否适用。
 
 ---
 
