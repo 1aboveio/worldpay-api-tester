@@ -1117,3 +1117,257 @@ curl -X POST https://gateway.payfac.com/v1/refunds \
   -H "Content-Type: application/json" \
   -d '{"payment_intent": "pi_K1a2b3c4d5e6", "amount": 250}'
 ```
+
+
+---
+
+## 8. Worldpay API 对接规范
+
+> **面向**：Gateway 后端开发者。先决条件：Worldpay username / password / entity。
+
+### 8.1 环境与认证
+
+HTTP Basic Auth: `Basic ${base64(username:password)}`
+
+| 环境 | Base URL |
+|------|----------|
+| 测试 | `https://try.access.worldpay.com` |
+| 生产 | `https://access.worldpay.com` |
+
+参考: [Worldpay Developer Portal](https://developer.worldpay.com/) | DNS 白名单 `*.access.worldpay.com`
+
+### 8.2 HTTP 客户端封装
+
+```typescript
+const WP_BASE = process.env.WORLDPAY_BASE_URL ?? "https://try.access.worldpay.com";
+
+async function wpCall(method: string, path: string, mediaType: string,
+                       body?: unknown, query?: Record<string,string>) {
+  const url = new URL(path, WP_BASE);
+  if (query) Object.entries(query).forEach(([k,v]) => url.searchParams.set(k,v));
+  const res = await fetch(url.toString(), {
+    method, headers: {
+      Authorization: `Basic ${Buffer.from(
+        `${process.env.WORLDPAY_USERNAME}:${process.env.WORLDPAY_PASSWORD}`
+      ).toString("base64")}`,
+      Accept: mediaType, ...(body && { "Content-Type": mediaType }),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(10000),
+  });
+  const text = await res.text();
+  let data; try { data = JSON.parse(text); } catch { data = text; }
+  return { status: res.status, data };
+}
+```
+
+### 8.3 Tokens v3 — Token 化
+
+参考: https://developer.worldpay.com/products/tokens
+Media Type: `application/vnd.worldpay.tokens-v3.hal+json`
+
+```
+POST /tokens
+```
+
+| 字段 | 必填 | 约束 |
+|------|------|------|
+| `paymentInstrument.type` | ✅ | `"card/front"` |
+| `paymentInstrument.cardNumber` | ✅ | 10-19 位 |
+| `paymentInstrument.cardExpiryDate.month/year` | ✅ | 1-12 / 1-9999 |
+| `paymentInstrument.cardHolderName` | ✅ | 1-255 |
+| `paymentInstrument.billingAddress.*` | ✅ | address1, postalCode, city, countryCode |
+| `merchant.entity` | ✅ | 1-64 |
+
+```typescript
+async function createToken(card: {number,expiryMonth,expiryYear,holderName,billingAddress}, entity: string) {
+  const { status, data } = await wpCall("POST", "/tokens",
+    "application/vnd.worldpay.tokens-v3.hal+json", {
+      paymentInstrument: {
+        type: "card/front", cardNumber: card.number,
+        cardExpiryDate: { month: card.expiryMonth, year: card.expiryYear },
+        cardHolderName: card.holderName,
+        billingAddress: { address1: card.billingAddress.line1,
+          city: card.billingAddress.city, postalCode: card.billingAddress.postalCode,
+          countryCode: card.billingAddress.country.toUpperCase() },
+      }, merchant: { entity },
+    });
+  if (status === 201 || status === 200) {
+    const d = data as any;
+    return { tokenHref: d.tokenPaymentInstrument?.href, bin: d.paymentInstrument?.bin,
+             last4: d.paymentInstrument?.last4Digits, brand: d.paymentInstrument?.brand };
+  }
+  if (status === 409) return { tokenHref: (data as any)._links["tokens:token"]?.href };
+  throw new Error(`Token creation failed: HTTP ${status}`);
+}
+```
+
+响应 (201):
+```json
+{"tokenPaymentInstrument":{"type":"card/tokenized","href":"https://try.access.worldpay.com/tokens/eyJr..."},
+ "paymentInstrument":{"type":"card/masked","cardNumber":"4444********1111","bin":"444433","brand":"VISA","last4Digits":"1111"}}
+```
+
+### 8.4 Card Payments v7
+
+参考: https://developer.worldpay.com/products/card-payments
+Media Type: `application/vnd.worldpay.payments-v7+json`
+
+#### CIT (买家发起)
+
+```
+POST /cardPayments/customerInitiatedTransactions
+```
+
+**PayFac 必填**: `merchant.paymentFacilitator: { schemeId, subMerchant: { reference, name, address: { street, postalCode, city, countryCode } } }`
+
+**Token 支付**: `paymentInstrument: { type: "card/token", href: tokenHref }`
+
+**可选**: `authentication.threeDS` (3DS结果), `riskProfile` (FraudSight URL), `customerAgreement: { type:"cardOnFile", storedCardUsage:"first" }` (MIT启用)
+
+```typescript
+async function citAuthorize(params: {amount,currency,entity,tokenHref,narrative,payFac,
+  threeDS?,riskProfileHref?,setupFutureUsage?,autoSettlement?:true}) {
+  const { status, data } = await wpCall("POST", "/cardPayments/customerInitiatedTransactions",
+    "application/vnd.worldpay.payments-v7+json", {
+      transactionReference: generateRef(),
+      merchant: { entity: params.entity,
+        paymentFacilitator: {
+          schemeId: params.payFac.schemeId,
+          subMerchant: { reference: params.payFac.subMerchant.reference,
+            name: params.payFac.subMerchant.name,
+            address: { street: params.payFac.subMerchant.address.street.substring(0,50),
+              postalCode: params.payFac.subMerchant.address.postalCode,
+              city: params.payFac.subMerchant.address.city.substring(0,13),
+              countryCode: params.payFac.subMerchant.address.countryCode }}}},
+      instruction: {
+        requestAutoSettlement: { enabled: params.autoSettlement !== false },
+        narrative: { line1: params.narrative.substring(0,24) },
+        value: { amount: params.amount, currency: params.currency.toUpperCase() },
+        paymentInstrument: { type: "card/token", href: params.tokenHref },
+        ...(params.setupFutureUsage && { customerAgreement: { type:"cardOnFile", storedCardUsage:"first" }})},
+      channel: "ecom",
+      ...(params.threeDS && { authentication: { threeDS: params.threeDS }}),
+      ...(params.riskProfileHref && { riskProfile: params.riskProfileHref }),
+    });
+  if (status === 201) {
+    const d = data as any;
+    return { outcome: d.outcome, paymentId: d.paymentId,
+             schemeReference: d.scheme?.reference, links: d._links };
+  }
+  throw new Error(`CIT failed: HTTP ${status}`);
+}
+```
+
+关键响应: `outcome` ("authorized"|"Sent for Settlement"|"refused"), `scheme.reference` (MIT 必须存储), `_links` (HATEOAS 后续 URL)
+
+#### MIT (商户发起)
+
+```
+POST /cardPayments/merchantInitiatedTransactions
+```
+
+| | CIT | MIT |
+|---|-----|-----|
+| customerAgreement | `storedCardUsage:"first"` (可选) | `storedCardUsage:"subsequent"` (必填) + `schemeReference` |
+| threeDS | 可选 | 不可传 |
+| channel | `"ecom"` | 不需要 |
+
+#### HATEOAS 后续操作
+
+不拼接 URL，直接使用 `_links` 中的 href:
+
+```typescript
+async function settle(links,full){return wpCall("POST",links[full?"cardPayments:settle":"cardPayments:partialSettle"]?.href,MEDIA_TYPE)}
+async function refund(links,full,amt?){const h=links[full?"cardPayments:refund":"cardPayments:partialRefund"]?.href;return wpCall("POST",h,MEDIA_TYPE,full?undefined:{value:{amount:amt,currency:"GBP"}})}
+async function cancel(links){return wpCall("POST",links["cardPayments:cancel"]?.href,MEDIA_TYPE)}
+async function events(links){return wpCall("GET",links["cardPayments:events"]?.href,MEDIA_TYPE)}
+```
+
+### 8.5 3DS v2
+
+参考: https://developer.worldpay.com/products/3ds
+Media Type: `application/vnd.worldpay.verifications.customers-v2.hal+json`
+
+#### DDC Init
+```
+POST /verifications/customers/3ds/deviceDataInitialize
+{ transactionReference, merchant:{entity}, paymentInstrument?:{type:"card/tokenized",href} }
+→ { outcome:"initialized", deviceDataCollection:{ jwt, url, bin } }
+```
+
+#### Authenticate
+```
+POST /verifications/customers/3ds/authenticate
+```
+
+必填: `transactionReference`, `merchant.entity`, `instruction.{value,paymentInstrument}`,
+       `deviceData.{acceptHeader,userAgentHeader,collectionReference}`, `challenge.returnUrl`
+
+- 响应 `authenticated` → `authentication.{version,eci,authenticationValue,transactionId}`
+- 响应 `challenged` → `challenge.{reference,url,jwt,payload}` → 前端展示 → Gateway /callback → verify
+
+#### Verify
+```
+POST /verifications/customers/3ds/verification
+{ transactionReference, merchant:{entity}, challenge:{reference} }
+```
+
+无需 cres。Worldpay back-channel 已从 issuer ACS 获取结果。
+
+### 8.6 FraudSight v1
+
+参考: https://developer.worldpay.com/products/fraudsight
+Media Type: `application/vnd.worldpay.fraudsight-v1.hal+json`
+
+```
+POST /fraudsight/assessment
+{ transactionReference, merchant:{entity}, instruction:{value,paymentInstrument},
+  riskData:{account:{email,shopperId},transaction:{firstName,lastName},shipping},
+  deviceData:{ipAddress} }
+→ { outcome:"lowRisk"|"review"|"highRisk", score, riskProfile:{href}, reason[] }
+```
+
+| outcome | 默认处理 |
+|---------|---------|
+| lowRisk | 继续支付 |
+| review | 继续 (admin 可配置 block) |
+| highRisk | block (admin 可配置 proceed) |
+
+### 8.7 Payment Queries v1
+
+参考: https://developer.worldpay.com/products/payment-queries
+Media Type: `application/vnd.worldpay.payment-queries-v1.hal+json`
+
+```
+GET /paymentQueries/payments?startDate=...&endDate=...&pageSize=50
+GET /paymentQueries/payments?transactionReference=order-12345
+GET /paymentQueries/payments/{paymentId}
+```
+
+> 异步延迟最长 15 分钟。期间用 `GET /payments/events`。
+
+### 8.8 Statements 2025-01-01
+
+参考: https://developer.worldpay.com/products/statements
+Header: `WP-Api-Version: 2025-01-01`, Accept: `application/json`
+
+```
+GET /accounts/statements?startDate=...&endDate=...&accountNumber=...
+```
+
+> amount 是实际金额 (£2.50), 非最小单位。日期范围 ≤ 31 天。
+
+### 8.9 速查总表
+
+| API | 端点 | Media Type |
+|-----|------|-----------|
+| Tokens v3 | `POST /tokens` | `tokens-v3.hal+json` |
+| Card Payments CIT | `POST /cardPayments/customerInitiatedTransactions` | `payments-v7+json` |
+| Card Payments MIT | `POST /cardPayments/merchantInitiatedTransactions` | 同上 |
+| 3DS DDC | `POST /verifications/customers/3ds/deviceDataInitialize` | `verifications.customers-v2.hal+json` |
+| 3DS Auth | `POST /verifications/customers/3ds/authenticate` | 同上 |
+| 3DS Verify | `POST /verifications/customers/3ds/verification` | 同上 |
+| FraudSight | `POST /fraudsight/assessment` | `fraudsight-v1.hal+json` |
+| Payment Queries | `GET /paymentQueries/payments` | `payment-queries-v1.hal+json` |
+| Statements | `GET /accounts/statements` | `WP-Api-Version: 2025-01-01` |
