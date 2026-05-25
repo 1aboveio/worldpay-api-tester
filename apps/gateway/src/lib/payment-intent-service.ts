@@ -338,6 +338,71 @@ export async function handleCreatePaymentIntent(
   }
 }
 
+export async function handleListPaymentIntents(
+  query: Record<string, string>,
+  apiKey: string,
+  deps: Pick<PaymentIntentServiceDeps, "resolveMerchant">,
+) {
+  let merchant: Awaited<ReturnType<ResolveMerchantFn>>
+  try {
+    merchant = await deps.resolveMerchant(apiKey)
+  } catch {
+    return Response.json(
+      { error: { code: "authentication_error", message: "Invalid API key" } },
+      { status: 401 },
+    )
+  }
+
+  const { listPaymentIntentsQuerySchema } = await import("./schemas")
+  const parsed = listPaymentIntentsQuerySchema.safeParse(query)
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0]
+    return Response.json(
+      {
+        error: {
+          code: "validation_error",
+          message: firstIssue?.message ?? "Invalid query",
+          path: firstIssue?.path?.join("."),
+        },
+      },
+      { status: 400 },
+    )
+  }
+
+  const { limit, created_since } = parsed.data
+  const { listPaymentIntents } = await import("@repo/dal")
+  const results = await listPaymentIntents(merchant.merchantId, {
+    limit,
+    createdSince: created_since ?? null,
+  })
+
+  const data = results.map((pi) => ({
+    id: pi.id,
+    object: "payment_intent",
+    amount: pi.amount,
+    currency: pi.currency,
+    status: pi.status,
+    capture_method: pi.captureMethod,
+    payment_method_details: {
+      type: "card",
+      card: maskCard(pi.paymentMethod?.brand ?? null, pi.paymentMethod?.last4 ?? null),
+    },
+    description: pi.description,
+    statement_descriptor: pi.statementDescriptor,
+    metadata: pi.metadata,
+    created: pi.createdAt instanceof Date ? pi.createdAt.toISOString() : new Date().toISOString(),
+  }))
+
+  return Response.json(
+    {
+      object: "list",
+      data,
+      has_more: results.length === limit,
+    },
+    { status: 200 },
+  )
+}
+
 export async function handleGetPaymentIntent(
   piId: string,
   apiKey: string,
@@ -370,12 +435,23 @@ export async function handleGetPaymentIntent(
       status: pi.status,
       capture_method: pi.captureMethod,
       payment_method_details: {
-        type: "card",
-        card: maskCard(pi.paymentMethod?.brand ?? null, pi.paymentMethod?.last4 ?? null),
+        type: pi.paymentMethod?.type ?? "card",
+        card: {
+          brand: pi.paymentMethod?.brand ?? null,
+          last4: pi.paymentMethod?.last4 ?? null,
+          expiry_month: pi.paymentMethod?.expiryMonth ?? null,
+          expiry_year: pi.paymentMethod?.expiryYear ?? null,
+          funding: pi.paymentMethod?.funding ?? null,
+          country: pi.paymentMethod?.country ?? null,
+        },
       },
-      description: pi.description,
-      statement_descriptor: pi.statementDescriptor,
-      metadata: pi.metadata,
+      three_d_secure: pi.threeDSStatus ? { status: pi.threeDSStatus } : null,
+      link_data: pi.linkData ?? null,
+      description: pi.description ?? null,
+      statement_descriptor: pi.statementDescriptor ?? null,
+      metadata: pi.metadata ?? null,
+      failure_code: pi.failureCode ?? null,
+      failure_message: pi.failureMessage ?? null,
       created: pi.createdAt instanceof Date ? pi.createdAt.toISOString() : new Date().toISOString(),
     },
     { status: 200 },
