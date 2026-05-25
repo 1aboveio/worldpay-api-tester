@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Merchant {
+  id             String           @id @default(cuid())
+  name           String
+  entity         String           @unique
+  payFacConfig   Json
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  apiKeys        ApiKey[]
+  paymentMethods PaymentMethod[]
+  paymentIntents PaymentIntent[]
+}
+
+model ApiKey {
+  id         String   @id @default(cuid())
+  keyHash    String   @unique
+  prefix     String
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model PaymentMethod {
+  id            String           @id
+  merchantId    String
+  merchant      Merchant         @relation(fields: [merchantId], references: [id])
+  type          String           @default("card")
+  tokenHref     String
+  brand         String?
+  last4         String?
+  expiryMonth   Int?
+  expiryYear    Int?
+  funding       String?
+  country       String?
+  cardholderName String?
+  billingAddress Json?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  paymentIntents PaymentIntent[]
+}
+
+enum PaymentIntentStatus {
+  created
+  processing
+  tokenizing
+  tokenized
+  risk_assessing
+  risk_assessed
+  authorizing
+  requires_capture
+  succeeded
+  canceled
+  payment_failed
+}
+
+model PaymentIntent {
+  id               String                @id
+  merchantId       String
+  merchant         Merchant              @relation(fields: [merchantId], references: [id])
+  amount           Int
+  currency         String
+  status           PaymentIntentStatus   @default(created)
+  captureMethod    String                @default("automatic")
+  paymentMethodId  String?
+  paymentMethod    PaymentMethod?        @relation(fields: [paymentMethodId], references: [id])
+  worldpayPaymentId String?
+  schemeReference  String?
+  linkData         Json?
+  threeDSStatus    String?
+  failureCode      String?
+  failureMessage   String?
+  metadata         Json?
+  idempotencyKey   String?
+  description      String?
+  statementDescriptor String?
+  setupFutureUsage String?
+  customerEmail    String?
+  customerIpAddress String?
+  shipping         Json?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+}
