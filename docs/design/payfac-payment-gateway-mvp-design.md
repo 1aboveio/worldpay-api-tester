@@ -138,6 +138,7 @@ Authorization: Bearer sk_live_YOUR_MERCHANT_SECRET_KEY
 │  POST   /v1/payment_intents            创建 (可一键确认)          │
 │  GET    /v1/payment_intents/{id}       查询                      │
 │  POST   /v1/payment_intents/{id}/confirm  确认支付               │
+│  POST   /v1/payment_intents/{id}/device_data  回传 DDC 结果     │
 │  POST   /v1/payment_intents/{id}/capture   手动请款               │
 │  POST   /v1/payment_intents/{id}/cancel    取消                  │
 │  GET    /v1/payment_intents             列表                     │
@@ -147,9 +148,8 @@ Authorization: Bearer sk_live_YOUR_MERCHANT_SECRET_KEY
 │  GET    /v1/payment_methods/{id}        查询                     │
 │  GET    /v1/payment_methods             列表                     │
 ├──────────────────────────────────────────────────────────────────┤
-│                     3DS Sessions (前端)                           │
-│  POST   /v1/3ds_sessions                创建 3DS 会话            │
-│  POST   /v1/3ds_sessions/{id}/challenge_result  提交 Challenge 结果│
+│                     3DS Callback (Gateway 内部)                   │
+│  GET    /v1/3ds/callback                Issuer challenge 完成回调 │
 ├──────────────────────────────────────────────────────────────────┤
 │                     Refunds                                      │
 │  POST   /v1/refunds                    创建退款                  │
@@ -159,6 +159,8 @@ Authorization: Bearer sk_live_YOUR_MERCHANT_SECRET_KEY
 │  GET    /v1/statements                  对账单                   │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+> **注意**：3DS DDC 结果通过 `POST /payment_intents/{id}/device_data` 回传，Challenge 回调由 Gateway `/v1/3ds/callback` 自动处理。商户只需调 PaymentIntent 接口，无需感知 3DS 内部细节。
 
 ### 3.3 Payment Intent — 统一支付接口
 
@@ -305,6 +307,24 @@ POST /v1/payment_intents
   "metadata": { "order_id": "12345" }
 }
 ```
+
+**需 DDC 设备指纹** (`status: "requires_device_data"`)：
+
+```json
+{
+  "id": "pi_K1a2b3c4d5e6",
+  "status": "requires_device_data",
+  "next_action": {
+    "type": "device_data_collection",
+    "device_data_collection": {
+      "ddc_url": "https://secure.worldpay.com/.../ddc.html",
+      "ddc_jwt": "eyJ0eXAiOiJKV1Qi..."
+    }
+  }
+}
+```
+
+> 前端运行隐藏 iframe DDC (步骤见 [§6.2](#62-ddc-device-data-collection-设备指纹))，完成后 `POST /v1/payment_intents/{id}/device_data` 回传 sessionId。
 
 **需 3DS Challenge** (`status: "requires_action"`)：
 
@@ -533,8 +553,20 @@ GET /v1/statements?from=2026-05-20T00:00:00Z&to=2026-05-25T23:59:59Z
                     │            │            │  │
                     ▼            ▼            │  │
               ┌──────────┐ ┌──────────────┐  │  │
-              │AUTHORIZING│ │AUTHENTICATING│  │  │ ← POST .../3ds/authenticate
-              └─────┬────┘ └──────┬───────┘  │  │
+              │AUTHORIZING│ │ DDC_INITIAL- │  │  │ ← POST .../deviceDataInitialize
+              └─────┬────┘ │    IZING     │  │  │    获取 { jwt, url }
+                    │      └──────┬───────┘  │  │
+                    │             │           │  │
+                    │             ▼           │  │
+                    │      ┌──────────────┐  │  │
+                    │      │  REQUIRES_   │  │  │ ← 前端运行隐藏 iframe DDC
+                    │      │ DEVICE_DATA  │  │  │    浏览器收集指纹 → sessionId
+                    │      └──────┬───────┘  │  │
+                    │             │ 前端回传 sessionId
+                    │             ▼           │  │
+                    │      ┌──────────────┐  │  │
+                    │      │AUTHENTICATING│  │  │ ← POST .../3ds/authenticate
+                    │      └──────┬───────┘  │  │    (含 collectionReference)
                     │             │           │  │
                     │      ┌──────┼──────┐    │  │
                     │      │frictionless│    │  │
@@ -543,8 +575,9 @@ GET /v1/statements?from=2026-05-20T00:00:00Z&to=2026-05-25T23:59:59Z
                     │  AUTHOR- │ REQUIRES_   │  │
                     │  IZING   │ ACTION      │  │ ← 前端展示 3DS challenge
                     │      │   │   │         │  │
-                    │      │   │   │ POST /3ds_sessions/{id}/
-                    │      │   │   │       challenge_result
+                    │      │   │   │ (issuer 完成 → 重定向到 Gateway →
+                    │      │   │   │  Gateway POST .../verification →
+                    │      │   │   │  获取 auth 结果 → 重定向到商户)
                     │      │   │   ▼         │  │
                     │      │   │ CHALLENGE_  │  │
                     │      │   │ COMPLETED   │  │
@@ -583,8 +616,11 @@ GET /v1/statements?from=2026-05-20T00:00:00Z&to=2026-05-25T23:59:59Z
 | `TOKENIZED` | (内部) token 化完成 | — |
 | `RISK_ASSESSING` | (内部) 风控评估中 | — |
 | `RISK_ASSESSED` | (内部) 风控完成 | — |
+| `DDC_INITIALIZING` | (内部) DDC 初始化中 | — |
+| `REQUIRES_DEVICE_DATA` | 需前端运行 DDC | 前端运行隐藏 iframe → 回传 sessionId |
 | `AUTHENTICATING` | (内部) 3DS 认证中 | — |
-| `REQUIRES_ACTION` | 需 3DS Challenge | 前端完成 challenge → 网关继续 |
+| `REQUIRES_ACTION` | 需 3DS Challenge | 浏览器完成 challenge → Gateway 回调自动处理 |
+| `REQUIRES_DEVICE_DATA` | 需前端运行 DDC | 前端运行隐藏 iframe → POST /device_data 回传 sessionId |
 | `CHALLENGE_COMPLETED` | (内部) Challenge 验证完成 | — |
 | `AUTHORIZING` | (内部) 支付授权中 | — |
 | `REQUIRES_CAPTURE` | 已授权，等待请款 | `POST /capture` 或 `POST /cancel` |
@@ -610,20 +646,38 @@ GET /v1/statements?from=2026-05-20T00:00:00Z&to=2026-05-25T23:59:59Z
     └──────────┘
 ```
 
-### 4.4 3DS Session 状态
+### 4.4 DDC Session 状态
 
 ```
-  POST /3ds_sessions
+  POST /payment_intents (3DS enabled)
          │
          ▼
-    ┌───────────┐
-    │ PENDING   │ ← 等待前端提交 challenge
-    └─────┬─────┘
-          │ POST /challenge_result
+    ┌──────────────┐
+    │ DDC PENDING  │ ← 前端收到 ddc_url + jwt
+    └─────┬────────┘
+          │ 前端运行隐藏 iframe DDC
+          │ POST /payment_intents/{id}/device_data
           ▼
-    ┌───────────┐
-    │ COMPLETED │ ← challenge 验证完成
-    └───────────┘
+    ┌──────────────┐
+    │ DDC COMPLETE │ ← 网关收到 sessionId, 继续 authenticate
+    └──────────────┘
+```
+
+### 4.5 3DS Challenge 状态
+
+```
+  POST .../3ds/authenticate
+         │
+         ▼ (frictionless)
+    ┌──────────────┐      ┌──────────────┐
+    │ AUTHENTICATED│      │  CHALLENGED  │ ← 返回 challenge url + jwt
+    └──────────────┘      └──────┬───────┘
+                                 │ 浏览器 → issuer ACS
+                                 │ issuer 完成 → Gateway callback
+                                 ▼
+                          ┌──────────────┐
+                          │   VERIFIED   │ ← POST .../verification
+                          └──────────────┘
 ```
 
 ---
@@ -649,45 +703,62 @@ Sub-merchant                PayFac Gateway                        Worldpay
      │                           │◀── riskProfile (lowRisk) ─────────│
      │                           │    (子商户不可见)                    │
      │                           │                                    │
-     │                           │── ④ 3DS Authenticate ────────────▶│ POST .../3ds/authenticate
+     │                           │── ④ DDC Init ────────────────────▶│ POST .../deviceDataInitialize
+     │                           │◀── {ddc_url, ddc_jwt} ──────────│
+     │◀── {status:"requires_     │                                    │
+     │     device_data",         │                                    │
+     │     ddc: {url, jwt}}      │                                    │
+     │                           │                                    │
+     │ ⑤ 前端运行 DDC (隐藏 iframe)│                                    │
+     │    → 获取 sessionId        │                                    │
+     │                           │                                    │
+     │ POST /payment_intents/     │                                    │
+     │   {id}/device_data         │                                    │
+     │──────────────────────────▶│                                    │
+     │                           │── ⑥ 3DS Authenticate ───────────▶│ POST .../3ds/authenticate
+     │                           │    (含 deviceData.                │   {collectionReference}
+     │                           │     collectionReference)          │
      │                           │◀── frictionless: authenticated ───│
      │                           │                                    │
-     │                           │── ⑤ CIT Authorize ───────────────▶│ POST /cardPayments/...
+     │                           │── ⑦ CIT Authorize ───────────────▶│ POST /cardPayments/...
      │                           │    (注入 payFac + entity +         │   {token, 3DS result,
      │                           │     riskProfile)                  │    riskProfile}
      │                           │◀── authorized ────────────────────│
      │                           │                                    │
-     │                           │── ⑥ Auto Capture ────────────────▶│ POST /settlements/...
+     │                           │── ⑧ Auto Capture ────────────────▶│ POST /settlements/...
      │                           │◀── settled ───────────────────────│
      │                           │                                    │
      │◀── 200 {status:"succeeded"}│                                   │
 ```
 
-### 5.2 3DS Challenge 路径
+### 5.2 3DS Challenge 路径 (Redirect 模式)
 
 ```
-Sub-merchant                PayFac Gateway                        Worldpay
-     │                           │                                    │
-     │ ③ 3DS Authenticate        │                                    │
-     │                           │── POST .../3ds/authenticate ─────▶│
-     │                           │◀── outcome: challenged ───────────│
-     │                           │                                    │
-     │◀── {status:"requires_     │                                    │
-     │     action",              │                                    │
-     │     next_action: {        │                                    │
-     │       challenge_url,      │                                    │
-     │       session_id}}        │                                    │
-     │                           │                                    │
-     │ ④ 前端展示 challenge iframe                                    │
-     │                           │                                    │
-     │ ⑤ POST /3ds_sessions/     │                                    │
-     │    {id}/challenge_result   │                                    │
-     │──────────────────────────▶│                                    │
-     │                           │── POST .../3ds/verification ─────▶│
-     │                           │◀── authenticated ─────────────────│
-     │                           │                                    │
-     │                           │── CIT Authorize ─────────────────▶│
-     │◀── {status:"succeeded"}   │◀── authorized ────────────────────│
+Sub-merchant前端           Browser            PayFac Gateway           Issuer ACS
+     │                        │                      │                     │
+     │                        │    requires_action   │                     │
+     │◀──── {status:"requires_action",               │                     │
+     │        challenge_url, jwt}────────────────────│                     │
+     │                        │                      │                     │
+     │ ③ 打开 iframe/redirect  │                      │                     │
+     │───────────────────────▶│                      │                     │
+     │                        │ ④ POST {JWT}         │                     │
+     │                        │──────────────────────────────────────────▶│
+     │                        │◀──── OTP / 生物识别 ─────────────────────│
+     │                        │                      │                     │
+     │                        │ ⑤ 认证完成            │                     │
+     │                        │ issuer 302 → Gateway  │                     │
+     │                        │─────────────────────▶│                     │
+     │                        │                      │── verify ──────────▶│ Worldpay
+     │                        │                      │◀─ authenticated ───│
+     │                        │                      │── authorize ───────▶│
+     │                        │                      │◀─ authorized ──────│
+     │                        │◀─ 302 → merchant URL  │                     │
+     │◀── return_url?status=succeeded ───────────────│                     │
+     │                        │                      │                     │
+     │ GET /payment_intents/{id}                      │                     │
+     │──────────────────────────────────────────────▶│                     │
+     │◀── {status:"succeeded"}                       │                     │
 ```
 
 ### 5.3 MIT 循环扣款 (Off-session)
@@ -749,99 +820,284 @@ POST /v1/refunds { payment_intent: "pi_...", amount: 250 }
 
 ## 6. 3DS 前端集成流程
 
-### 6.1 整体时序
+### 6.1 组件关系
 
 ```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│  Browser │    │Merchant  │    │  PayFac  │    │ Worldpay │
-│          │    │ Backend  │    │ Gateway  │    │   3DS    │
-└────┬─────┘    └────┬─────┘    └────┬─────┘    └────┬─────┘
-     │               │               │               │
-     │ ① 下单        │               │               │
-     │──────────────▶│               │               │
-     │               │ ② POST        │               │
-     │               │  /payment_    │               │
-     │               │   intents     │               │
-     │               │──────────────▶│               │
-     │               │               │── 3DS auth ──▶│
-     │               │               │◀─ challenged ─│
-     │               │◀── 200 {      │               │
-     │               │    status:    │               │
-     │               │    "requires_ │               │
-     │               │    action",   │               │
-     │               │    next_action│               │
-     │               │    {challenge_│               │
-     │               │     url, jwt, │               │
-     │               │     session_id│               │
-     │               │    }          │               │
-     │               │   }          │               │
-     │               │               │               │
-     │ ③ 浏览器收到 challenge 数据    │               │
-     │◀──────────────│               │               │
-     │               │               │               │
-     │ ④ 打开 iframe / 全页重定向     │               │
-     │   POST challenge_url + JWT    │               │
-     │──────────────────────────────────────────────▶│
-     │◀──────────────────── issuer ACS pages ───────│
-     │   (持卡人输入 OTP / 生物识别)    │               │
-     │               │               │               │
-     │ ⑤ 完成 → 重定向到 return_url   │               │
-     │◀──────────────│               │               │
-     │               │               │               │
-     │ ⑥ POST /3ds_sessions/         │               │
-     │   {id}/challenge_result        │               │
-     │──────────────▶│               │               │
-     │               │──────────────▶│               │
-     │               │               │── verify ────▶│
-     │               │               │◀─ verified ───│
-     │               │               │               │
-     │               │               │── authorize ─▶│
-     │               │               │◀─ authorized ─│
-     │               │◀── 200 {status:"succeeded"}   │
-     │◀──────────────│               │               │
+                   ┌────────────────────┐
+                   │    Merchant 后端    │
+                   │  (API Key auth)    │
+                   └────────┬───────────┘
+                            │ POST /payment_intents
+                            ▼
+┌───────────────────────────────────────────────────────┐
+│                   PayFac Gateway                      │
+│                                                       │
+│  ① Tokenize → ② FraudSight → ③ DDC Init →            │
+│  ④ Authenticate → ⑤ Authorize → ⑥ Capture            │
+│                                                       │
+│  ┌─────────────┐  ┌──────────────┐                   │
+│  │ DDC Manager │  │ 3DS Session  │                   │
+│  │ (隐藏 iframe)│  │  (challenge) │                   │
+│  └─────────────┘  └──────────────┘                   │
+└───────────────────────────────────────────────────────┘
+           │                      │
+           │ DDC iframe           │ Challenge iframe / redirect
+           ▼                      ▼
+┌──────────────────────┐  ┌──────────────────────┐
+│  Worldpay DDC URL    │  │  Issuer ACS URL      │
+│  (设备指纹采集)        │  │  (OTP / 生物识别)    │
+└──────────────────────┘  └──────────────────────┘
 ```
 
-### 6.2 前端实现要点
+### 6.2 DDC (Device Data Collection) 设备指纹
+
+**触发时机**：紧接在 FraudSight 评估之后、3DS authenticate 之前。
+
+**为什么必须做 DDC？**
+- 3DS v2 要求 issuer 获取设备指纹以做风险评估
+- DDC 收集浏览器信息（语言、时区、屏幕尺寸、插件等）
+- 不做 DDC 会导致 issuer 无法完成风险分析，增加 challenge 率
+
+**网关处理**：
 
 ```
-// ① 商户前端收到 requires_action 后的处理:
-
-// 打开 3DS challenge iframe
-const iframe = document.createElement('iframe');
-iframe.src = nextAction.three_d_secure_challenge.challenge_url;
-iframe.name = 'threeDSChallenge';
-document.body.appendChild(iframe);
-
-// 构建 challenge form (在 iframe 内)
-const form = document.createElement('form');
-form.method = 'POST';
-form.action = challenge_url;
-form.innerHTML = `
-  <input type="hidden" name="JWT" value="${challenge_jwt}" />
-  <input type="hidden" name="MD" value="${challenge_payload}" />
-`;
-form.submit();
-
-// ② Challenge 完成后，issuer 重定向到 return_url
-// ③ 前端提交结果到网关
-fetch(`/v1/3ds_sessions/${sessionId}/challenge_result`, {
-  method: 'POST',
-  body: JSON.stringify({ cres: cresFromRedirect })
-});
+Gateway                              Worldpay
+   │                                     │
+   │── ① POST /deviceDataInitialize ───▶│
+   │    { transactionReference,          │
+   │      merchant.entity,               │
+   │      paymentInstrument (token) }    │
+   │◀── { outcome: "initialized",       │
+   │      deviceDataCollection: {        │
+   │        jwt: "eyJ...",              │
+   │        url: "https://.../ddc.html",│
+   │        bin: "444433"               │
+   │      }}                             │
+   │                                     │
+   │ ② 返回给浏览器:                      │
+   │    status: "requires_device_data"   │
+   │    ddc: { jwt, url }               │
 ```
 
-### 6.3 3DS Session API
+**前端处理（隐藏 iframe, 用户无感）**：
+
+```html
+<!-- 商户 checkout 页面自动执行 -->
+<script>
+  // 创建隐藏 iframe
+  const iframe = document.createElement('iframe');
+  iframe.src = ddcUrl;   // https://secure.worldpay.com/.../ddc.html
+  iframe.style.display = 'none';
+  document.body.appendChild(iframe);
+
+  // DDC iframe 加载后 POST JWT
+  iframe.onload = () => {
+    const form = iframe.contentDocument.createElement('form');
+    form.method = 'POST';
+    form.action = ddcUrl;
+    form.innerHTML = `<input name="JWT" value="${ddcJwt}" />`;
+    form.submit();
+  };
+
+  // DDC 完成 → postMessage 返回 sessionId
+  window.addEventListener('message', (event) => {
+    if (event.origin === 'https://secure.worldpay.com') {
+      const sessionId = event.data.sessionId;
+      // 回传给网关
+      fetch(`/v1/payment_intents/${piId}/device_data`, {
+        method: 'POST',
+        body: JSON.stringify({ collection_reference: sessionId })
+      });
+    }
+  });
+</script>
+```
+
+> **用户体验**：DDC 在隐藏 iframe 中运行，约 2-5 秒完成。用户点击"支付"按钮时，DDC 通常已经完成，无需额外等待。
+
+### 6.3 3DS Challenge 流程
+
+**两种模式**：
+
+| 模式 | 适用场景 | 方式 | 用户体验 |
+|------|---------|------|---------|
+| **Iframe 模式** | Web checkout | 弹出 iframe/lightbox | 不离开商户页面 |
+| **Redirect 模式** | 不支持 iframe 的场景 | 整页跳转 | 跳转到银行页面 |
+
+**Challenge 回调路径**：`Issuer ACS → PayFac Gateway → Browser → Merchant Page`
 
 ```
-POST /v1/3ds_sessions
-  → 由 PaymentIntent requires_action 后端自动创建
-  → 返回 session_id, challenge_url, jwt, payload
-
-POST /v1/3ds_sessions/{id}/challenge_result
-  Body: { "cres": "challenge_response_from_issuer" }
-  → 网关调用 Worldpay POST .../3ds/verification
-  → 继续 PaymentIntent 流程
+┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+│ Browser  │  │ Merchant │  │  PayFac  │  │  Issuer  │  │ Worldpay │
+│          │  │  Backend │  │ Gateway  │  │   ACS    │  │   3DS    │
+└────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘
+     │              │             │             │             │
+     │ ① 用户点击支付  │             │             │             │
+     │─────────────▶│             │             │             │
+     │              │ ② POST      │             │             │
+     │              │  /payment_  │             │             │
+     │              │   intents   │             │             │
+     │              │────────────▶│             │             │
+     │              │             │── DDC init ▶│             │
+     │◀── DDC ──────│◀────────────│             │             │
+     │── sessionId ▶│────────────▶│             │             │
+     │              │             │── authenticate ─────────▶│
+     │              │             │◀─ outcome: challenged ───│
+     │              │◀── {status: │             │             │
+     │◀── requires_ │  "requires_ │             │             │
+     │    action,   │   action",  │             │             │
+     │    challenge │   challenge │             │             │
+     │    url+jwt}  │    url+jwt} │             │             │
+     │              │             │             │             │
+     │ ③ 打开 iframe / redirect    │             │             │
+     │   POST {JWT} to challenge_url           │             │
+     │────────────────────────────────────────▶│             │
+     │◀───────────── OTP / 生物识别 ───────────│             │
+     │              │             │             │             │
+     │ ④ 认证完成    │             │             │             │
+     │              │             │             │             │
+     │    [Redirect 模式]                       │             │
+     │    issuer 重定向到 Gateway 回调 URL       │             │
+     │──────────────┼────────────▶│             │             │
+     │              │             │── verify ──────────────▶│
+     │              │             │◀─ authenticated ────────│
+     │              │             │── authorize ───────────▶│
+     │              │             │   (3DS auth result +   │
+     │              │             │    riskProfile)        │
+     │              │             │◀─ authorized ──────────│
+     │              │             │                         │
+     │    Gateway 重定向到 merchant return_url              │
+     │◀─────────────┼─────────────│             │             │
+     │    (URL 参数: pi_id, status)             │             │
+     │              │             │             │             │
+     │    [Iframe 模式]                            │             │
+     │    issuer ACS 通过 postMessage 发出结果    │             │
+     │◀── postMessage ───────────│             │             │
+     │              │             │             │             │
+     │ ⑤ 网关收到结果后继续执行     │             │             │
+     │    Gateway → verify → authorize            │             │
+     │              │◀── 200 {status:"succeeded"}  │             │
+     │◀── succeeded │             │             │             │
 ```
+
+### 6.4 Stripe 的实现方式
+
+作为对比，Stripe 的做法：
+
+```
+Stripe.js (浏览器端)                          Stripe 后端
+      │                                            │
+      │ ① 页面加载时自动运行 DDC                       │
+      │    (通过 stripe.js 内置的指纹采集)             │
+      │                                            │
+      │ ② createPaymentMethod() → 卡号 token 化      │
+      │────────────────────────────────────────────▶│
+      │                                            │
+      │ ③ confirmCardPayment()                     │
+      │────────────────────────────────────────────▶│
+      │                                            │── 3DS authenticate
+      │                                            │◀─ challenged
+      │◀── { status: "requires_action",            │
+      │      next_action: {                        │
+      │        type: "redirect_to_url",             │
+      │        redirect_to_url: {                  │
+      │          url: "https://hooks.stripe.com/    │ ← Stripe 的 URL!
+      │                3d_secure_2/..."            │
+      │        }                                   │
+      │      }}                                    │
+      │                                            │
+      │ ④ 浏览器重定向到 Stripe URL                   │
+      │────────────────────────────────────────────▶│
+      │    Stripe 302 → issuer ACS URL              │
+      │    (Stripe 做了一层代理转发)                  │
+      │                                            │
+      │ ⑤ Issuer ACS 完成 → 重定向到 Stripe URL      │
+      │────────────────────────────────────────────▶│
+      │    Stripe 处理 cres → verify →               │
+      │    302 → merchant return_url                │
+      │                                            │
+      │◀── 重定向到 merchant 页面                     │
+      │     + Stripe.js 自动更新 PaymentIntent 状态  │
+```
+
+**Stripe 的关键设计**：
+1. `return_url` 指向 Stripe 自己的 URL (`hooks.stripe.com`)
+2. Issuer → Stripe → (302) → Merchant。Stripe 在中间层处理 verify，商户只收到最终结果
+3. DDC 由 Stripe.js 在页面加载时静默完成
+
+### 6.5 我们的设计
+
+基于 Stripe 范式 + Worldpay 约束：
+
+```
+Gateway 回调 URL 设计:
+
+  authenticate 请求中:
+    challenge.returnUrl = "https://gateway.payfac.com/v1/3ds/callback"
+                          ?pi_id=xxx&session_id=yyy
+
+  流程:
+    ① Issuer ACS 完成 challenge
+    ② 浏览器被 302 到 gateway URL
+    ③ Gateway 收到回调:
+       - 从 session 中取出 challenge.reference
+       - POST /verifications/customers/3ds/verification
+       - 获取 authentication 结果
+       - 执行 CIT 授权 (POST /cardPayments/...)
+       - 302 重定向浏览器到 merchant.return_url
+         ?pi_id=xxx&status=succeeded
+    ④ 商家页面加载，轮询 GET /payment_intents/{id} 确认最终状态
+```
+
+**Gateway 回调端点**：
+
+```
+GET/POST /v1/3ds/callback?pi_id={pi_id}&session_id={session_id}
+
+  → 浏览器从 issuer ACS 被重定向到此 URL
+  → Gateway server-side:
+     1. 查询 session → 获取 challengeReference, merchantReturnUrl
+     2. POST Worldpay verification
+     3. 执行 CIT 授权
+     4. 302 redirect → merchantReturnUrl?status=succeeded|failed
+```
+
+**支付接口 DDC 响应**：
+
+当 PaymentIntent 需要运行 DDC 时：
+
+```json
+// POST /payment_intents 响应
+{
+  "id": "pi_K1a2b3c4d5e6",
+  "status": "requires_device_data",
+  "next_action": {
+    "type": "device_data_collection",
+    "device_data_collection": {
+      "ddc_url": "https://secure.worldpay.com/.../ddc.html",
+      "ddc_jwt": "eyJ0eXAiOiJKV1Qi..."
+    }
+  }
+}
+
+// 前端 DDC 完成后:
+POST /v1/payment_intents/{id}/device_data
+{ "collection_reference": "0_4XXXXXXX-XXXX-..." }
+→ 网关继续: authenticate → authorize
+```
+
+**3DS Session API** (简化版)：
+
+```
+POST /v1/payment_intents/{id}/device_data
+  Body: { "collection_reference": "0_4XXXX..." }
+  → 回传 DDC sessionId，触发后续 authenticate
+
+GET  /v1/payment_intents/{id}
+  → 轮询状态（适用于 redirect 模式后确认）
+```
+
+> **不再需要独立的 3DS Session 端点**。DDC 结果通过 `POST /payment_intents/{id}/device_data` 回传，challenge 结果通过 Gateway 回调自动处理。商户只需轮询 PaymentIntent 状态。
 
 ---
 
