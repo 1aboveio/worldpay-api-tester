@@ -2,6 +2,9 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
+ARG DATABASE_URL=postgres://placeholder:placeholder@localhost:5432/worldpay
+ENV DATABASE_URL=$DATABASE_URL
+
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Copy monorepo root files

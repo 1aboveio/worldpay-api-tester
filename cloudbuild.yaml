@@ -37,6 +37,7 @@ steps:
     name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '--build-arg=DATABASE_URL=postgres://placeholder:placeholder@localhost:5432/worldpay'
       - '-t'
       - 'us-central1-docker.pkg.dev/$PROJECT_ID/worldpay-api-tester/gateway:$SHORT_SHA'
       - '-t'
