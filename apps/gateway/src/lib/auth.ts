@@ -1,9 +1,21 @@
 import { createHash } from "crypto"
 import { getApiKeyByHash } from "@repo/dal"
 import type { ApiKeyDTO } from "@repo/dal"
+import { betterAuth } from "better-auth"
+import { prismaAdapter } from "@better-auth/prisma-adapter"
+import { database } from "@repo/database"
 
-// Placeholder — Better Auth instance configured at runtime
-export const auth = null as any
+// Better Auth instance
+export const auth = betterAuth({
+  database: prismaAdapter(database as any, { provider: "postgresql" }),
+  emailAndPassword: {
+    enabled: true,
+  },
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    updateAge: 60 * 60 * 24, // 1 day
+  },
+})
 
 /**
  * Hash an API key prefix (e.g. "sk_test_" or "sk_live_") with SHA-256
