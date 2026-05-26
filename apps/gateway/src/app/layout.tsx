@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import "@repo/ui/globals.css"
+import "@repo/ui/src/styles/globals.css"
 
 export const metadata: Metadata = {
   title: "Worldpay API Tester",

@@ -1,4 +1,4 @@
-import { WorldpayClient } from "@payfac/worldpay-client/client";
+import { WorldpayClient } from "@payfac/worldpay-client";
 import type { IWorldpayClient } from "@payfac/worldpay-client";
 
 let client: IWorldpayClient | null = null;

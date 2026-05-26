@@ -11,7 +11,9 @@ const config: NextConfig = {
     "@payfac/worldpay-client",
     "@payfac/validators",
     "better-auth",
+    "better-auth/next-js",
     "@better-auth/prisma-adapter",
+    "sonner",
   ],
 }
 
