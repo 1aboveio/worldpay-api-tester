@@ -12,6 +12,7 @@ model Merchant {
   name           String
   entity         String           @unique
   payFacConfig   Json
+  status         String           @default("active")
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
   apiKeys        ApiKey[]

@@ -67,6 +67,12 @@ export async function handleCreatePaymentIntent(
   const input = parsed.data
   const piId = generatePiId()
   const currency = input.currency.toUpperCase()
+
+  // MIT detection: card_token without three_d_secure → merchant-initiated
+  if (input.payment_method.type === "card_token" && !input.three_d_secure) {
+    return handleMitPayment(input, piId, currency, merchant, deps)
+  }
+
   const entity = merchant.entity
   const payFac = merchant.payFacConfig
 
@@ -335,6 +341,110 @@ export async function handleCreatePaymentIntent(
         failure_message: "Authorization request failed",
         payment_method_details: { type: "card", card: maskCard(cardBrand, cardLast4) },
       },
+      { status: 200 },
+    )
+  }
+}
+
+// ─── MIT Payment Handler ─────────────────────────────────────────
+
+async function handleMitPayment(
+  input: CreatePaymentIntentInput,
+  piId: string,
+  currency: string,
+  merchant: Awaited<ReturnType<ResolveMerchantFn>>,
+  deps: PaymentIntentServiceDeps,
+) {
+  // Validate token exists and belongs to merchant
+  const { getPaymentMethodByIdAndMerchant, getLatestCitWithSetupFutureUsage } = await import("@repo/dal")
+  const pm = await getPaymentMethodByIdAndMerchant(input.payment_method.token, merchant.merchantId)
+  if (!pm) {
+    return Response.json(
+      { error: { code: "token_invalid", message: "Payment method not found" } },
+      { status: 400 },
+    )
+  }
+
+  // Verify prior CIT with setup_future_usage
+  const priorCit = await getLatestCitWithSetupFutureUsage(input.payment_method.token)
+  if (!priorCit) {
+    return Response.json(
+      { error: { code: "mit_requires_cit", message: "No prior CIT with setup_future_usage found" } },
+      { status: 400 },
+    )
+  }
+  if (!priorCit.schemeReference) {
+    return Response.json(
+      { error: { code: "mit_not_setup", message: "Prior CIT has no scheme reference" } },
+      { status: 400 },
+    )
+  }
+
+  // Create PI record
+  const { createPaymentIntent, updatePaymentIntentStatus } = await import("@repo/dal")
+  const { PaymentIntentStatus: PIS } = await import("@repo/database")
+  await createPaymentIntent({
+    id: piId,
+    merchantId: merchant.merchantId,
+    amount: input.amount,
+    currency,
+    status: PIS.authorizing,
+    captureMethod: input.capture_method,
+    paymentMethodId: input.payment_method.token,
+    description: input.description ?? null,
+    statementDescriptor: input.statement_descriptor ?? null,
+    metadata: (input.metadata as Record<string, unknown>) ?? null,
+  })
+
+  // MIT authorize — POST /cardPayments/merchantInitiatedTransactions
+  try {
+    const mitResult = (await deps.wpCall(
+      "/cardPayments/merchantInitiatedTransactions",
+      "application/vnd.worldpay.payments-v7+json",
+      {
+        transactionReference: piId,
+        merchant: {
+          entity: merchant.entity,
+          paymentFacilitator: merchant.payFacConfig,
+        },
+        instruction: {
+          requestAutoSettlement: { enabled: input.capture_method !== "manual" },
+          narrative: { line1: (input.statement_descriptor ?? input.description ?? "").substring(0, 24) },
+          value: { amount: input.amount, currency },
+          paymentInstrument: { type: "card/token", href: (pm as any).tokenHref },
+          customerAgreement: { type: "unscheduled", storedCardUsage: "subsequent", schemeReference: priorCit.schemeReference },
+        },
+      },
+    )) as Record<string, unknown>
+
+    if (mitResult.outcome === "authorized") {
+      const settled = input.capture_method !== "manual"
+      await updatePaymentIntentStatus({
+        id: piId,
+        status: settled ? PIS.succeeded : PIS.requires_capture,
+        worldpayPaymentId: mitResult.paymentId as string,
+        linkData: mitResult._links,
+      })
+      return Response.json(
+        { id: piId, object: "payment_intent", amount: input.amount, currency, status: settled ? "succeeded" : "requires_capture", capture_method: input.capture_method },
+        { status: 200 },
+      )
+    }
+
+    await updatePaymentIntentStatus({
+      id: piId,
+      status: PIS.payment_failed,
+      failureCode: mitResult.refusalCode as string ?? "refused",
+      failureMessage: mitResult.refusalDescription as string ?? "MIT payment refused",
+    })
+    return Response.json(
+      { id: piId, object: "payment_intent", amount: input.amount, currency, status: "payment_failed", failure_code: mitResult.refusalCode ?? "refused" },
+      { status: 200 },
+    )
+  } catch (err) {
+    await updatePaymentIntentStatus({ id: piId, status: PIS.payment_failed, failureMessage: String(err) })
+    return Response.json(
+      { id: piId, object: "payment_intent", amount: input.amount, currency, status: "payment_failed", failure_code: "processing_error" },
       { status: 200 },
     )
   }

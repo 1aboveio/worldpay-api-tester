@@ -48,6 +48,10 @@ export const createPaymentIntentSchema = z.object({
   customer: customerSchema,
   shipping: shippingSchema,
   metadata: z.record(z.string(), z.unknown()).optional(),
+  three_d_secure: z.object({
+    enabled: z.boolean().optional(),
+    return_url: z.string().optional(),
+  }).optional(),
 })
 
 export type CreatePaymentIntentInput = z.infer<typeof createPaymentIntentSchema>

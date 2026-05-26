@@ -127,6 +127,7 @@ function cardTokenRequest(overrides?: Record<string, unknown>) {
     },
     confirm: true,
     capture_method: "automatic",
+    three_d_secure: { enabled: true },
     ...overrides,
   }
 }

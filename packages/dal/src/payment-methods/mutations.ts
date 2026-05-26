@@ -30,6 +30,17 @@ export async function getPaymentMethodByIdAndMerchant(id: string, merchantId: st
   return pm
 }
 
+export async function getLatestCitWithSetupFutureUsage(paymentMethodId: string) {
+  return database.paymentIntent.findFirst({
+    where: {
+      paymentMethodId,
+      setupFutureUsage: "off_session",
+      status: { in: ["succeeded", "requires_capture"] },
+    },
+    orderBy: { createdAt: "desc" },
+  }) as any
+}
+
 export async function getPaymentMethodByIdempotencyKey(merchantId: string, idempotencyKey: string) {
   const pm = await (database.paymentMethod as any).findFirst?.({
     where: { merchantId, idempotencyKey },

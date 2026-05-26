@@ -4,38 +4,55 @@ import {
   handleListPaymentIntents,
   type PaymentIntentServiceDeps,
 } from "@/lib/payment-intent-service"
+import { resolveMerchantFromApiKey } from "@/lib/auth"
+import { worldpayRequest } from "@/lib/worldpay-client"
 
-// These are the real production dependencies.
-// Tests override them via module mocking or dependency injection.
 const defaultDeps: PaymentIntentServiceDeps = {
-  wpCall: async () => {
-    throw new Error("wpCall not configured")
-  },
-  createToken: async () => {
-    throw new Error("createToken not configured")
+  wpCall: (async (path: string, mediaType: string, body?: unknown) => {
+    return worldpayRequest(path, { method: body ? "POST" : "GET", mediaType, body } as any)
+  }) as any,
+  createToken: async (card: any, entity: string) => {
+    const result = await worldpayRequest("/tokens", {
+      method: "POST",
+      mediaType: "application/vnd.worldpay.tokens-v3.hal+json",
+      body: {
+        tokenType: "card",
+        paymentInstrument: {
+          type: "card/plain",
+          cardNumber: card.number,
+          expiryDate: { month: card.expiryMonth, year: card.expiryYear },
+          cvc: card.cvc,
+          cardHolderName: card.cardholderName,
+        },
+      },
+    } as any) as any
+    return {
+      tokenHref: result.tokenPaymentInstrument?.href ?? "",
+      brand: result.paymentInstrument?.brand ?? "visa",
+      last4: result.paymentInstrument?.last4Digits ?? "1111",
+      expiryMonth: card.expiryMonth,
+      expiryYear: card.expiryYear,
+    }
   },
   resolveMerchant: async (apiKey: string) => {
-    // In production, this would look up the API key in the database.
-    // For now, this is a placeholder — real auth will be wired in from #1.
-    throw new Error("resolveMerchant not configured")
+    const record = await resolveMerchantFromApiKey(apiKey)
+    if (!record) throw new Error("Invalid API key")
+    return {
+      merchantId: record.merchantId,
+      entity: record.merchant.worldpayEntity,
+      payFacConfig: {
+        schemeId: record.merchant.payfacSchemeId ?? "",
+        subMerchant: record.merchant.subMerchantRef as any ?? {},
+      },
+    }
   },
 }
 
-// Allow tests to override deps
 let overrides: Partial<PaymentIntentServiceDeps> | null = null
 
-export function __setDeps(deps: Partial<PaymentIntentServiceDeps>) {
-  overrides = deps
-}
-
-export function __resetDeps() {
-  overrides = null
-}
-
-function getDeps(): PaymentIntentServiceDeps {
-  return { ...defaultDeps, ...overrides }
-}
-
+export function __setDeps(deps: Partial<PaymentIntentServiceDeps>) { overrides = deps }
+export function __resetDeps() { overrides = null }
+function getDeps(): PaymentIntentServiceDeps { return { ...defaultDeps, ...overrides } }
 function extractApiKey(request: NextRequest): string {
   const auth = request.headers.get("authorization")
   if (!auth?.startsWith("Bearer ")) return ""
@@ -51,9 +68,9 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const apiKey = extractApiKey(request)
   const url = new URL(request.url)
+  const query: Record<string, unknown> = {}
   const limit = url.searchParams.get("limit")
   const createdSince = url.searchParams.get("created_since")
-  const query: Record<string, unknown> = {}
   if (limit) query.limit = Number(limit)
   if (createdSince) query.created_since = createdSince
   return handleListPaymentIntents(query, apiKey, getDeps())
