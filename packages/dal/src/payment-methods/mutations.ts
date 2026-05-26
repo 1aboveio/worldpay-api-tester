@@ -23,6 +23,7 @@ export async function createPaymentMethod(
       id: input.id,
       merchantId: input.merchantId,
       worldpayTokenHref: input.worldpayTokenHref,
+      idempotencyKey: input.idempotencyKey,
       brand: input.brand,
       last4: input.last4,
       expiryMonth: input.expiryMonth,
@@ -38,7 +39,8 @@ export async function getPaymentMethodByIdempotencyKey(
   merchantId: string,
   idempotencyKey: string,
 ) {
-  // For now, return null since we don't have an idempotencyKey column in the schema yet.
-  // In production, this would query a separate table or column.
-  return null;
+  if (!idempotencyKey) return null
+  return database.paymentMethod.findFirst({
+    where: { merchantId, idempotencyKey },
+  })
 }

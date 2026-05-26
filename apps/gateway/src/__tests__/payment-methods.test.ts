@@ -81,10 +81,11 @@ function buildWorldpayTokenResponse(
 function buildWorldpayErrorResponse(
   status: number,
   message: string,
+  errorName?: string,
 ): Response {
   return new Response(
     JSON.stringify({
-      errorName: "apiError",
+      errorName: errorName ?? "apiError",
       message,
     }),
     {
@@ -359,7 +360,7 @@ describe("GET /api/v1/payment_methods/{id} — not found", () => {
 describe("POST /api/v1/payment_methods — invalid card", () => {
   it("returns 400 with invalid_card_number when Worldpay rejects invalid card number", async () => {
     mockWpCall.mockResolvedValueOnce(
-      buildWorldpayErrorResponse(400, "Invalid card number"),
+      buildWorldpayErrorResponse(400, "Invalid card number", "cardNumberInvalid"),
     );
 
     const badCard = {
@@ -406,7 +407,7 @@ describe("POST /api/v1/payment_methods — expired card", () => {
 
   it("returns 400 when Worldpay says card expired", async () => {
     mockWpCall.mockResolvedValueOnce(
-      buildWorldpayErrorResponse(400, "Card has expired"),
+      buildWorldpayErrorResponse(400, "Card has expired", "cardExpired"),
     );
 
     const futureCard = {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { createPaymentMethodSchema } from "./schema";
 import { extractBearerToken, resolveMerchantFromApiKey } from "@/lib/auth";
 import { wpCall } from "@/lib/worldpay-client";
@@ -20,8 +21,7 @@ function isCardExpired(year: number, month: number): boolean {
 function computeIdempotencyKey(tokenHref: string): string {
   // Hash of the plaintext token href for idempotency lookups.
   // Using SHA-256 so that we can dedup without storing the plaintext href.
-  const crypto = require("node:crypto");
-  return crypto.createHash("sha256").update(tokenHref).digest("hex");
+  return createHash("sha256").update(tokenHref).digest("hex");
 }
 
 export async function POST(request: NextRequest) {
@@ -58,12 +58,12 @@ export async function POST(request: NextRequest) {
 
     const parsed = createPaymentMethodSchema.safeParse(body);
     if (!parsed.success) {
-      const firstError = parsed.error.errors[0];
+      const firstIssue = parsed.error.issues[0];
       return NextResponse.json(
         {
           error: {
             code: "invalid_request",
-            message: firstError?.message ?? "Invalid request body",
+            message: firstIssue?.message ?? "Invalid request body",
           },
         },
         { status: 400 },
@@ -109,17 +109,19 @@ export async function POST(request: NextRequest) {
     if (!wpResponse.ok) {
       const wpMessage: string = wpBody?.message ?? wpBody?.error?.message ?? "Tokenization failed";
 
-      if (
-        wpMessage.toLowerCase().includes("invalid") ||
-        wpMessage.toLowerCase().includes("number")
-      ) {
+      // Match against Worldpay error response structure (errorName / errorCode),
+      // not by substring-matching the message text.
+      const wpErrorName: string | undefined =
+        wpBody?.errorName ?? wpBody?.error?.errorName ?? wpBody?.errorCode ?? wpBody?.error?.errorCode;
+
+      if (wpErrorName === "cardNumberInvalid" || wpErrorName === "invalidCardNumber") {
         return NextResponse.json(
           { error: { code: "invalid_card_number", message: "The card number is invalid" } },
           { status: 400 },
         );
       }
 
-      if (wpMessage.toLowerCase().includes("expired")) {
+      if (wpErrorName === "tokenExpired" || wpErrorName === "cardExpired") {
         return NextResponse.json(
           { error: { code: "card_expired", message: "The card has expired" } },
           { status: 400 },
@@ -153,7 +155,12 @@ export async function POST(request: NextRequest) {
       "";
 
     if (!tokenHref) {
-      console.error("Worldpay Tokens v3 response missing token href", JSON.stringify(wpBody).substring(0, 500));
+            // Never log the raw Worldpay response body — it may echo card number back.
+      console.error("Worldpay Tokens v3 response missing token href", {
+        status: 201,
+        errorType: "token_href_missing",
+        responseKeys: Object.keys(wpBody ?? {}),
+      });
       return NextResponse.json(
         { error: { code: "tokenization_failed", message: "Failed to extract token from Worldpay response" } },
         { status: 502 },

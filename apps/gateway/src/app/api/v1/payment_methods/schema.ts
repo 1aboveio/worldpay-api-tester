@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v4";
 
 const billingAddressSchema = z.object({
   line1: z.string().optional(),

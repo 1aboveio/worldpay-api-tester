@@ -36,6 +36,7 @@ model PaymentMethod {
   merchantId        String
   merchant          Merchant @relation(fields: [merchantId], references: [id])
   worldpayTokenHref String
+  idempotencyKey    String?
   brand             String
   last4             String
   expiryMonth       Int
@@ -45,5 +46,6 @@ model PaymentMethod {
   status            String   @default("active")
   createdAt         DateTime @default(now())
 
+  @@unique([merchantId, idempotencyKey])
   @@index([merchantId])
 }
