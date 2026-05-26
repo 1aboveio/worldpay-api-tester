@@ -688,18 +688,17 @@ export async function handleListPaymentIntents(
     createdSince: query.created_since as string | undefined,
   })
   
-  const { formatPaymentIntentResponse } = await import("./format-pi-response")
-  const data = (results ?? []).map((pi: any) => ({
+  const data = (results ?? []).map((pi: Record<string, unknown>) => ({
     id: pi.id,
     object: "payment_intent",
     amount: pi.amount,
     currency: pi.currency,
     status: pi.status,
-    created: (pi as any).createdAt?.toISOString?.() ?? new Date().toISOString(),
-    payment_method_details: pi.paymentMethod ? {
+    created: (pi as any).createdAt instanceof Date ? (pi as any).createdAt.toISOString() : new Date().toISOString(),
+    payment_method_details: (pi as any).paymentMethod ? {
       card: {
-        brand: pi.paymentMethod.brand ?? "unknown",
-        last4: pi.paymentMethod.last4 ?? "****",
+        brand: (pi as any).paymentMethod?.brand ?? "unknown",
+        last4: (pi as any).paymentMethod?.last4 ?? "****",
       },
     } : undefined,
   }))

@@ -165,7 +165,7 @@ export const database = {
       }
       return null
     },
-    findMany: async ({ where, orderBy, take, skip }: { where?: Record<string, unknown>; orderBy?: Record<string, string>; take?: number; skip?: number }) => {
+    findMany: async ({ where, orderBy, take, skip, include }: { where?: Record<string, unknown>; orderBy?: Record<string, string>; take?: number; skip?: number; include?: Record<string, boolean> }) => {
       let pis = Array.from(store.paymentIntents.values())
       if (where) {
         pis = pis.filter(pi => {
@@ -186,7 +186,7 @@ export const database = {
       if (take) pis = pis.slice(0, take as number)
       return pis.map(pi => {
         const pmId = pi.paymentMethodId as string | undefined
-        const pm = pmId ? store.paymentMethods.get(pmId) ?? null : null
+        const pm = (include?.paymentMethod && pmId) ? store.paymentMethods.get(pmId) ?? null : null
         return { ...withDates(pi), paymentMethod: pm }
       })
     },
