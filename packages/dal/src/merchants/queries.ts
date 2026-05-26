@@ -13,6 +13,37 @@ export interface MerchantDTO {
   status: string
 }
 
+export interface ApiKeyDTO {
+  id: string
+  keyHash: string
+  merchantId: string
+  merchant: MerchantDTO
+}
+
+export async function getApiKeyByHash(keyHash: string): Promise<ApiKeyDTO | null> {
+  const apiKey = await database.apiKey.findUnique({
+    where: { keyHash },
+    include: { merchant: true },
+  })
+  if (!apiKey) return null
+  return {
+    id: apiKey.id,
+    keyHash: apiKey.keyHash,
+    merchantId: apiKey.merchantId,
+    merchant: {
+      id: apiKey.merchant.id,
+      name: apiKey.merchant.name,
+      worldpayEntity: apiKey.merchant.worldpayEntity,
+      payfacSchemeId: apiKey.merchant.payfacSchemeId,
+      subMerchantRef: apiKey.merchant.subMerchantRef,
+      subMerchantName: apiKey.merchant.subMerchantName,
+      subMerchantAddress: apiKey.merchant.subMerchantAddress,
+      fraudsightConfig: apiKey.merchant.fraudsightConfig,
+      status: apiKey.merchant.status,
+    },
+  }
+}
+
 export async function getMerchantById(id: string): Promise<MerchantDTO | null> {
   const merchant = await database.merchant.findUnique({ where: { id } })
   if (!merchant) return null

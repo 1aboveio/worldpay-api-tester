@@ -17,7 +17,7 @@ steps:
       - |
         corepack enable
         corepack prepare pnpm@latest --activate
-        cd packages/database && pnpm prisma generate
+        pnpm --filter @repo/database db:generate
 
   - name: 'node:22'
     entrypoint: 'bash'

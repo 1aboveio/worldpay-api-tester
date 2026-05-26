@@ -57,3 +57,16 @@ export const capturePaymentIntentSchema = z.object({
 })
 
 export type CapturePaymentIntentInput = z.infer<typeof capturePaymentIntentSchema>
+
+export const paymentListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(10),
+  created_since: z.string().datetime({ message: "created_since must be ISO 8601" }).optional(),
+})
+
+export type PaymentListQuery = z.infer<typeof paymentListQuerySchema>
+
+export const statementsQuerySchema = z.object({
+  from: z.string().datetime({ message: "from must be ISO 8601" }),
+  to: z.string().datetime({ message: "to must be ISO 8601" }),
+  page: z.coerce.number().int().min(1).optional().default(1),
+})

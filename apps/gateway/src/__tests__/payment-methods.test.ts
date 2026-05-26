@@ -20,7 +20,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/v1/payment_methods/route";
 import { GET } from "@/app/api/v1/payment_methods/[id]/route";
-import { __resetStore } from "@repo/dal";
+import { resetMockStores } from "@repo/database";
 
 // --- Mock Worldpay HTTP client (external system boundary) ---
 vi.mock("@/lib/worldpay-client", () => ({
@@ -109,7 +109,7 @@ const VALID_CARD = {
 // --- Reset mocks between tests ---
 beforeEach(() => {
   vi.clearAllMocks();
-  __resetStore();
+  resetMockStores();
 });
 
 // =============================================================================

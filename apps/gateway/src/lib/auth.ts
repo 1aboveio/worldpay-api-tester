@@ -1,4 +1,6 @@
 import { createHash } from "crypto"
+import { getApiKeyByHash } from "@repo/dal"
+import type { ApiKeyDTO } from "@repo/dal"
 
 /**
  * Hash an API key prefix (e.g. "sk_test_" or "sk_live_") with SHA-256
@@ -19,4 +21,31 @@ export function extractBearerToken(
   const match = authorizationHeader.match(/^Bearer\s+(.+)$/i)
   if (!match?.[1]) return null
   return match[1].trim()
+}
+
+export interface ResolvedApiKey extends ApiKeyDTO {
+  merchant: {
+    id: string
+    name: string
+    worldpayEntity: string
+    status: string
+  }
+}
+
+/**
+ * Resolve merchant from API key bearer token.
+ * Returns the resolved API key record with merchant or null.
+ */
+export async function resolveMerchantFromApiKey(
+  authorizationHeader: string | null
+): Promise<ResolvedApiKey | null> {
+  const token = extractBearerToken(authorizationHeader)
+  if (!token) return null
+
+  const keyHash = hashApiKey(token)
+  const apiKey = await getApiKeyByHash(keyHash)
+  if (!apiKey) return null
+  if (apiKey.merchant.status !== "active") return null
+
+  return apiKey as ResolvedApiKey
 }

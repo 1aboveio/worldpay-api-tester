@@ -5,14 +5,49 @@
 const store: {
   paymentIntents: Map<string, Record<string, unknown>>
   paymentMethods: Map<string, Record<string, unknown>>
+  merchants: Map<string, Record<string, unknown>>
+  apiKeys: Map<string, Record<string, unknown>>
 } = {
   paymentIntents: new Map(),
   paymentMethods: new Map(),
+  merchants: new Map(),
+  apiKeys: new Map(),
 }
+
+// Seed a default test merchant and API key
+const DEFAULT_MERCHANT = {
+  id: "merchant_test",
+  name: "Test Merchant",
+  worldpayEntity: "test_entity",
+  payfacSchemeId: "12345",
+  subMerchantRef: JSON.stringify({ reference: "sub001", name: "Test Sub", address: { street: "123 Test St", postalCode: "12345", city: "Test", countryCode: "GB" } }),
+  subMerchantName: "Test Sub",
+  subMerchantAddress: JSON.stringify({ street: "123 Test St", postalCode: "12345", city: "Test", countryCode: "GB" }),
+  fraudsightConfig: JSON.stringify({ enabled: true, action_on_high_risk: "block", action_on_review: "proceed" }),
+  status: "active",
+  createdAt: new Date(),
+  updatedAt: new Date(),
+}
+
+import { createHash } from "node:crypto"
+const DEFAULT_API_KEY_HASH = createHash("sha256").update("sk_test_valid").digest("hex")
+
+const DEFAULT_API_KEY = {
+  id: "apikey_test",
+  keyHash: DEFAULT_API_KEY_HASH,
+  merchantId: "merchant_test",
+  createdAt: new Date(),
+}
+
+store.merchants.set("merchant_test", DEFAULT_MERCHANT)
+store.apiKeys.set(DEFAULT_API_KEY_HASH, DEFAULT_API_KEY)
 
 export function resetMockStores() {
   store.paymentIntents.clear()
   store.paymentMethods.clear()
+  // Re-seed merchant and API key
+  store.merchants.set("merchant_test", { ...DEFAULT_MERCHANT })
+  store.apiKeys.set(DEFAULT_API_KEY_HASH, { ...DEFAULT_API_KEY })
 }
 
 export function getMockStore() {
@@ -74,6 +109,21 @@ export const database = {
     },
     findUnique: async ({ where }: { where: { id: string } }) => {
       return store.paymentMethods.get(where.id) ?? null
+    },
+  },
+  merchant: {
+    findUnique: async ({ where }: { where: { id: string } }) => {
+      return store.merchants.get(where.id) ?? null
+    },
+  },
+  apiKey: {
+    findUnique: async ({ where, include }: { where: { keyHash: string }; include?: { merchant: boolean } }) => {
+      const apiKey = store.apiKeys.get(where.keyHash)
+      if (!apiKey) return null
+      if (include?.merchant) {
+        return { ...apiKey, merchant: store.merchants.get(apiKey.merchantId as string) ?? null }
+      }
+      return apiKey
     },
   },
 }
