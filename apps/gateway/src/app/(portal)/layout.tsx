@@ -12,7 +12,7 @@ export default async function PortalLayout({
 
   // Auth guard: no session → login
   if (!session) {
-    redirect("/portal/login")
+    redirect("/login")
   }
 
   // No merchants assigned → error state

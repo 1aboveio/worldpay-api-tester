@@ -4,7 +4,7 @@ import { redirect } from "next/navigation"
 
 export default async function RefundsPage() {
   const session = await getSession()
-  if (!session) redirect("/portal/login")
+  if (!session) redirect("/login")
 
   const merchantId = session.activeMerchantId
   if (!merchantId) redirect("/portal/dashboard")

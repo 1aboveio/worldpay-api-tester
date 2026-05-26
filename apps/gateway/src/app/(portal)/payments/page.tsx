@@ -11,7 +11,7 @@ export default async function PaymentsPage({
   searchParams: SearchParams
 }) {
   const session = await getSession()
-  if (!session) redirect("/portal/login")
+  if (!session) redirect("/login")
 
   const params = await searchParams
   const isPlatformView = session.activeRole === "platform_admin"

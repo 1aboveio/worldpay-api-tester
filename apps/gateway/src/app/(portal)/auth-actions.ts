@@ -156,5 +156,5 @@ export async function logoutAction() {
   await auth.api.signOut({
     headers: await headers(),
   })
-  redirect("/portal/login")
+  redirect("/login")
 }

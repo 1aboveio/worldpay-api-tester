@@ -5,7 +5,7 @@ import { ApiKeyManager } from "./api-key-manager"
 
 export default async function SettingsPage() {
   const session = await getSession()
-  if (!session) redirect("/portal/login")
+  if (!session) redirect("/login")
 
   const merchantId = session.activeMerchantId
   if (!merchantId) redirect("/portal/dashboard")

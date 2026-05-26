@@ -9,7 +9,7 @@ export default async function PaymentDetailPage({
   params: Promise<{ id: string }>
 }) {
   const session = await getSession()
-  if (!session) redirect("/portal/login")
+  if (!session) redirect("/login")
 
   const { id } = await params
   const pi = await getPaymentIntentForPortal(id)

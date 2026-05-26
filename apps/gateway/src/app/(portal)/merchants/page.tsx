@@ -5,7 +5,7 @@ import { redirect } from "next/navigation"
 
 export default async function MerchantsPage() {
   const session = await getSession()
-  if (!session) redirect("/portal/login")
+  if (!session) redirect("/login")
 
   // Only platform admins can see all merchants
   if (session.activeRole !== "platform_admin") {

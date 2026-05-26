@@ -9,7 +9,7 @@ export default async function MerchantDetailPage({
   params: Promise<{ id: string }>
 }) {
   const session = await getSession()
-  if (!session) redirect("/portal/login")
+  if (!session) redirect("/login")
   if (session.activeRole !== "platform_admin") redirect("/portal/dashboard")
 
   const { id } = await params

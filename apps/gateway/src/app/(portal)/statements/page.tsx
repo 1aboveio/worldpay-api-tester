@@ -10,7 +10,7 @@ export default async function StatementsPage({
   searchParams: SearchParams
 }) {
   const session = await getSession()
-  if (!session) redirect("/portal/login")
+  if (!session) redirect("/login")
 
   const params = await searchParams
   const isPlatformView = session.activeRole === "platform_admin"
