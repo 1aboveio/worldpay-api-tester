@@ -1,30 +1,22 @@
+import { createHash } from "crypto"
+
 /**
- * Authentication helpers.
- *
- * Resolves merchantId from a Bearer API key.
- * Assumes middleware or route handler verification.
+ * Hash an API key prefix (e.g. "sk_test_" or "sk_live_") with SHA-256
+ * for constant-time lookup in the ApiKey table.
  */
-
-import { database } from "@repo/database";
-
-export async function resolveMerchantFromApiKey(
-  apiKey: string,
-): Promise<{ merchantId: string } | null> {
-  const keyRecord = await database.apiKey.findUnique({
-    where: { key: apiKey },
-    select: { merchantId: true },
-  });
-  return keyRecord ? { merchantId: keyRecord.merchantId } : null;
+export function hashApiKey(key: string): string {
+  return createHash("sha256").update(key).digest("hex")
 }
 
 /**
- * Extracts the Bearer token from the Authorization header.
+ * Extract the bearer token from an Authorization header.
+ * Returns null if missing or malformed.
  */
 export function extractBearerToken(
-  authorizationHeader: string | null,
+  authorizationHeader: string | null
 ): string | null {
-  if (!authorizationHeader) return null;
-  const parts = authorizationHeader.split(" ");
-  if (parts.length !== 2 || parts[0].toLowerCase() !== "bearer") return null;
-  return parts[1];
+  if (!authorizationHeader) return null
+  const match = authorizationHeader.match(/^Bearer\s+(.+)$/i)
+  if (!match?.[1]) return null
+  return match[1].trim()
 }

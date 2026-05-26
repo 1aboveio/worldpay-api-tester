@@ -2,5 +2,5 @@
   "name": "@repo/eslint-config",
   "private": true,
   "main": "index.js",
-  "files": ["index.js"]
+  "files": ["index.js", "next.js", "base.js"]
 }

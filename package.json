@@ -5,17 +5,18 @@
     "build": "turbo build",
     "dev": "turbo dev",
     "lint": "turbo lint",
-    "test": "turbo test",
-    "typecheck": "turbo typecheck",
     "db:generate": "turbo db:generate",
-    "db:push": "cd packages/database && pnpm db:push"
+    "db:push": "turbo db:push",
+    "test": "turbo test --filter=@apps/gateway",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\""
   },
   "devDependencies": {
-    "turbo": "^2.5.0",
-    "typescript": "^5.7.0"
+    "prettier": "^3.2.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0"
   },
-  "packageManager": "pnpm@10.6.4",
-  "pnpm": {
-    "onlyBuiltDependencies": ["@prisma/engines", "esbuild", "prisma", "sharp"]
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.19.0"
   }
 }
