@@ -402,6 +402,16 @@ describe("GET /api/v1/payment_intents", () => {
       expect(body.data[0].id).toBe("pi_new1")
       expect(body.data[0].amount).toBe(300)
     })
+
+    it("returns 400 for invalid created_since date", async () => {
+      setupFullDeps()
+
+      const res = await makeListRequest("created_since=not-a-date")
+      const body = await jsonBody(res)
+
+      expect(res.status).toBe(400)
+      expect(body.error.code).toBe("validation_error")
+    })
   })
 
   describe("has_more when more results", () => {

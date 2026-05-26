@@ -1,8 +1,9 @@
-import { createPaymentIntentSchema, type CreatePaymentIntentInput } from "./schemas"
+import { createPaymentIntentSchema, listPaymentIntentsQuerySchema, type CreatePaymentIntentInput } from "./schemas"
 import type { WpCallFn, CreateTokenFn, ResolveMerchantFn } from "./worldpay-types"
 import {
   createPaymentIntent,
   getPaymentIntentByIdAndMerchant,
+  listPaymentIntents,
   updatePaymentIntentStatus,
   createPaymentMethod,
 } from "@repo/dal"
@@ -353,7 +354,6 @@ export async function handleListPaymentIntents(
     )
   }
 
-  const { listPaymentIntentsQuerySchema } = await import("./schemas")
   const parsed = listPaymentIntentsQuerySchema.safeParse(query)
   if (!parsed.success) {
     const firstIssue = parsed.error.issues[0]
@@ -370,7 +370,6 @@ export async function handleListPaymentIntents(
   }
 
   const { limit, created_since } = parsed.data
-  const { listPaymentIntents } = await import("@repo/dal")
   const results = await listPaymentIntents(merchant.merchantId, {
     limit,
     createdSince: created_since ?? null,
