@@ -11,8 +11,7 @@ import type { PaymentIntentResponse } from "@payfac/validators";
 // ── Config ─────────────────────────────────────────────────
 
 export interface GatewayConfig {
-  gatewayBaseUrl: string;
-  skipDdcInit?: boolean; // e.g., "https://gateway.payfac.com"
+  gatewayBaseUrl: string; // e.g., "https://gateway.payfac.com"
 }
 
 // ── 3DS Orchestration result ──────────────────────────────
@@ -332,7 +331,6 @@ export async function handleChallengeCallback(params: {
   amount: number;
   currency: string;
   gatewayBaseUrl: string;
-  skipDdcInit?: boolean;
   payfacSchemeId?: string;
   subMerchantRef?: string;
   subMerchantName?: string;
