@@ -31,11 +31,11 @@ function errorResponse(
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // --- 1. Auth middleware ---
-  const authError = await authMiddleware(request)
-  if (authError) return authError
+  const authResult = await authMiddleware(request)
+  if (authResult instanceof NextResponse) return authResult
 
-  // --- 2. Resolve merchant ---
-  const merchant = await resolveMerchant(request)
+  // --- 2. Resolve merchant from the pre-resolved API key record ---
+  const merchant = resolveMerchant(authResult)
   if (!merchant) {
     return errorResponse("invalid_api_key", "Could not resolve merchant", 401)
   }

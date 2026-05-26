@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@repo/dal": "workspace:*",
-    "@repo/database": "workspace:*",
     "@repo/ui": "workspace:*",
     "next": "^16.0.0",
     "react": "^19.0.0",

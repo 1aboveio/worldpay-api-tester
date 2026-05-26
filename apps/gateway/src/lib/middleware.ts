@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { hashApiKey, extractBearerToken } from "./auth"
-import { getApiKeyByHash } from "@repo/dal"
+import { getApiKeyByHash, type ApiKeyDTO } from "@repo/dal"
 
 export interface AuthenticatedRequest extends NextRequest {
   merchant?: {
@@ -11,9 +11,23 @@ export interface AuthenticatedRequest extends NextRequest {
   }
 }
 
+export type ResolvedApiKey = ApiKeyDTO & {
+  merchant: {
+    id: string
+    name: string
+    worldpayEntity: string
+    status: string
+  }
+}
+
+/**
+ * Authenticate the request by hashing the bearer token and looking up
+ * the API key. Returns the resolved ApiKey record on success so the
+ * caller can reuse it without a second database lookup.
+ */
 export async function authMiddleware(
   request: NextRequest
-): Promise<NextResponse | null> {
+): Promise<NextResponse | ResolvedApiKey> {
   const authHeader = request.headers.get("authorization")
   const token = extractBearerToken(authHeader)
 
@@ -41,23 +55,18 @@ export async function authMiddleware(
     )
   }
 
-  return null
+  return apiKeyRecord
 }
 
 /**
- * Extract merchant context from the request by hashing the bearer token
- * and looking up the ApiKey. Returns null if not found.
+ * Extract merchant context from a pre-resolved API key record.
+ * Consumer should obtain the record from authMiddleware to avoid
+ * a duplicate database lookup.
  */
-export async function resolveMerchant(
-  request: NextRequest
-): Promise<AuthenticatedRequest["merchant"] | null> {
-  const authHeader = request.headers.get("authorization")
-  const token = extractBearerToken(authHeader)
-  if (!token) return null
-
-  const keyHash = hashApiKey(token)
-  const apiKeyRecord = await getApiKeyByHash(keyHash)
-  if (!apiKeyRecord) return null
-
+export function resolveMerchant(
+  apiKeyRecord: ResolvedApiKey
+): AuthenticatedRequest["merchant"] | null {
+  if (!apiKeyRecord?.merchant) return null
+  if (apiKeyRecord.merchant.status !== "active") return null
   return apiKeyRecord.merchant
 }

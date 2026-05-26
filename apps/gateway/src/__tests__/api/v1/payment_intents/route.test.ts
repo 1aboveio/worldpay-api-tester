@@ -45,6 +45,7 @@ describe("POST /api/v1/payment_intents — auth", () => {
 
     expect(res.status).toBe(401)
     expect(data.error.code).toBe("invalid_api_key")
+    expect(data.error.message).toBe("Missing API key")
   })
 
   it("AC5: returns 401 for invalid API key", async () => {
@@ -59,6 +60,7 @@ describe("POST /api/v1/payment_intents — auth", () => {
 
     expect(res.status).toBe(401)
     expect(data.error.code).toBe("invalid_api_key")
+    expect(data.error.message).toBe("Invalid API key")
   })
 })
 
