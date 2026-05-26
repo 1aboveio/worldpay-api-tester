@@ -42,7 +42,7 @@ ENV PORT=8080
 # Copy standalone output
 COPY --from=builder /app/apps/gateway/.next/standalone ./
 COPY --from=builder /app/apps/gateway/.next/static ./apps/gateway/.next/static
-COPY --from=builder /app/apps/gateway/public ./apps/gateway/public
+RUN mkdir -p ./apps/gateway/public
 
 # Copy Prisma generated client (needed at runtime by DAL)
 COPY --from=builder /app/packages/database/generated ./packages/database/generated
@@ -51,4 +51,5 @@ COPY --from=builder /app/packages/database/generated ./packages/database/generat
 # Next.js standalone outputs server.js at the root
 EXPOSE 8080
 
-CMD ["node", "server.js"]
+# Find and run the standalone server entrypoint
+CMD ["sh", "-c", "exec node $(find . -name server.js -path '*/apps/gateway/*' | head -1)"]
