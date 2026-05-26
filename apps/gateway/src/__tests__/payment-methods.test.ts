@@ -24,12 +24,12 @@ import { resetMockStores } from "@repo/database";
 
 // --- Mock Worldpay HTTP client (external system boundary) ---
 vi.mock("@/lib/worldpay-client", () => ({
-  wpCall: vi.fn(),
+  worldpayRequest: vi.fn(),
 }));
 
-import { wpCall } from "@/lib/worldpay-client";
+import { worldpayRequest } from "@/lib/worldpay-client";
 
-const mockWpCall = vi.mocked(wpCall);
+const mockWorldpay = vi.mocked(worldpayRequest);
 
 // --- Helpers ---
 function makeRequest(
@@ -118,7 +118,7 @@ beforeEach(() => {
 
 describe("POST /api/v1/payment_methods — valid card", () => {
   it("returns 201 with pm_xxx id and masked card info", async () => {
-    mockWpCall.mockResolvedValueOnce(buildWorldpayTokenResponse());
+    mockWorldpay.mockResolvedValueOnce(buildWorldpayTokenResponse());
 
     const req = makeRequest("POST", "/api/v1/payment_methods", VALID_CARD);
     const res = await POST(req);
@@ -140,13 +140,13 @@ describe("POST /api/v1/payment_methods — valid card", () => {
   });
 
   it("calls Worldpay Tokens v3 with correct media type", async () => {
-    mockWpCall.mockResolvedValueOnce(buildWorldpayTokenResponse());
+    mockWorldpay.mockResolvedValueOnce(buildWorldpayTokenResponse());
 
     const req = makeRequest("POST", "/api/v1/payment_methods", VALID_CARD);
     await POST(req);
 
-    expect(mockWpCall).toHaveBeenCalledTimes(1);
-    const callArgs = mockWpCall.mock.calls[0][0];
+    expect(mockWorldpay).toHaveBeenCalledTimes(1);
+    const callArgs = mockWorldpay.mock.calls[0][0];
     expect(callArgs.method).toBe("POST");
     expect(callArgs.path).toBe("/tokens");
     expect(callArgs.mediaType).toBe(
@@ -161,7 +161,7 @@ describe("POST /api/v1/payment_methods — valid card", () => {
 
 describe("POST /api/v1/payment_methods — security: no sensitive data in response", () => {
   it("response never contains card number", async () => {
-    mockWpCall.mockResolvedValueOnce(buildWorldpayTokenResponse());
+    mockWorldpay.mockResolvedValueOnce(buildWorldpayTokenResponse());
 
     const req = makeRequest("POST", "/api/v1/payment_methods", VALID_CARD);
     const res = await POST(req);
@@ -175,7 +175,7 @@ describe("POST /api/v1/payment_methods — security: no sensitive data in respon
 
   it("response never contains Worldpay token href", async () => {
     const tokenHref = "https://try.access.worldpay.com/tokens/tok_secret_xyz";
-    mockWpCall.mockResolvedValueOnce(
+    mockWorldpay.mockResolvedValueOnce(
       buildWorldpayTokenResponse(tokenHref),
     );
 
@@ -192,7 +192,7 @@ describe("POST /api/v1/payment_methods — security: no sensitive data in respon
   });
 
   it("GET response also never contains token href", async () => {
-    mockWpCall.mockResolvedValueOnce(buildWorldpayTokenResponse());
+    mockWorldpay.mockResolvedValueOnce(buildWorldpayTokenResponse());
 
     const postReq = makeRequest("POST", "/api/v1/payment_methods", VALID_CARD);
     const postRes = await POST(postReq);
@@ -223,7 +223,7 @@ describe("POST /api/v1/payment_methods — token href encryption at rest", () =>
   it("token href stored by DAL is encrypted, not plaintext", async () => {
     const plainTokenHref =
       "https://try.access.worldpay.com/tokens/tok_real_123";
-    mockWpCall.mockResolvedValueOnce(
+    mockWorldpay.mockResolvedValueOnce(
       buildWorldpayTokenResponse(plainTokenHref),
     );
 
@@ -264,7 +264,7 @@ describe("POST /api/v1/payment_methods — token href encryption at rest", () =>
 
 describe("GET /api/v1/payment_methods/{id}", () => {
   it("returns stored masked card info", async () => {
-    mockWpCall.mockResolvedValueOnce(buildWorldpayTokenResponse());
+    mockWorldpay.mockResolvedValueOnce(buildWorldpayTokenResponse());
 
     // Create first
     const postReq = makeRequest("POST", "/api/v1/payment_methods", VALID_CARD);
@@ -290,7 +290,7 @@ describe("GET /api/v1/payment_methods/{id}", () => {
   });
 
   it("returns 200 with correct status field", async () => {
-    mockWpCall.mockResolvedValueOnce(buildWorldpayTokenResponse());
+    mockWorldpay.mockResolvedValueOnce(buildWorldpayTokenResponse());
 
     const postReq = makeRequest("POST", "/api/v1/payment_methods", VALID_CARD);
     const postRes = await POST(postReq);
@@ -329,7 +329,7 @@ describe("GET /api/v1/payment_methods/{id} — not found", () => {
   });
 
   it("returns 404 for valid id belonging to different merchant", async () => {
-    mockWpCall.mockResolvedValueOnce(buildWorldpayTokenResponse());
+    mockWorldpay.mockResolvedValueOnce(buildWorldpayTokenResponse());
 
     // Create as merchant_1
     const postReq = makeRequest("POST", "/api/v1/payment_methods", VALID_CARD);
@@ -359,7 +359,7 @@ describe("GET /api/v1/payment_methods/{id} — not found", () => {
 
 describe("POST /api/v1/payment_methods — invalid card", () => {
   it("returns 400 with invalid_card_number when Worldpay rejects invalid card number", async () => {
-    mockWpCall.mockResolvedValueOnce(
+    mockWorldpay.mockResolvedValueOnce(
       buildWorldpayErrorResponse(400, "Invalid card number", "cardNumberInvalid"),
     );
 
@@ -406,7 +406,7 @@ describe("POST /api/v1/payment_methods — expired card", () => {
   });
 
   it("returns 400 when Worldpay says card expired", async () => {
-    mockWpCall.mockResolvedValueOnce(
+    mockWorldpay.mockResolvedValueOnce(
       buildWorldpayErrorResponse(400, "Card has expired", "cardExpired"),
     );
 
@@ -437,10 +437,10 @@ describe("POST /api/v1/payment_methods — idempotency", () => {
   it("tokenizing same card twice returns same pm_xxx", async () => {
     const tokenHref = "https://try.access.worldpay.com/tokens/tok_same_card";
 
-    mockWpCall.mockResolvedValueOnce(
+    mockWorldpay.mockResolvedValueOnce(
       buildWorldpayTokenResponse(tokenHref),
     );
-    mockWpCall.mockResolvedValueOnce(
+    mockWorldpay.mockResolvedValueOnce(
       buildWorldpayTokenResponse(tokenHref),
     );
 
@@ -461,12 +461,12 @@ describe("POST /api/v1/payment_methods — idempotency", () => {
   });
 
   it("different cards get different pm_xxx", async () => {
-    mockWpCall.mockResolvedValueOnce(
+    mockWorldpay.mockResolvedValueOnce(
       buildWorldpayTokenResponse(
         "https://try.access.worldpay.com/tokens/tok_card1",
       ),
     );
-    mockWpCall.mockResolvedValueOnce(
+    mockWorldpay.mockResolvedValueOnce(
       buildWorldpayTokenResponse(
         "https://try.access.worldpay.com/tokens/tok_card2",
       ),
@@ -588,7 +588,7 @@ describe("Validation edge cases", () => {
 describe("Gateway error handling", () => {
   it("returns 502 when Worldpay response is missing token href", async () => {
     // Return a response without tokenHref
-    mockWpCall.mockResolvedValueOnce(
+    mockWorldpay.mockResolvedValueOnce(
       new Response(JSON.stringify({ result: "ok" }), {
         status: 201,
         headers: { "content-type": "application/json" },
@@ -601,7 +601,7 @@ describe("Gateway error handling", () => {
   });
 
   it("returns 500 on unexpected errors during tokenization", async () => {
-    mockWpCall.mockRejectedValueOnce(new Error("Network failure"));
+    mockWorldpay.mockRejectedValueOnce(new Error("Network failure"));
 
     const req = makeRequest("POST", "/api/v1/payment_methods", VALID_CARD);
     const res = await POST(req);
