@@ -84,8 +84,8 @@ describe("AC1-AC2: UserMerchant creation by email domain", () => {
     const user = makeUser({ id: userId, email: "admin@fmmpay.com" })
     seedUser(user)
 
-    // Create UserMerchant for all merchants
-    const merchants = Array.from(store.merchants.values())
+    // Create UserMerchant for only our test merchants
+    const merchants = Array.from(store.merchants.values()).filter((m: any) => m.id === "m1" || m.id === "m2")
     for (const m of merchants) {
       seedUserMerchant({
         userId,
