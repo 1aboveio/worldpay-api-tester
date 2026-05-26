@@ -40,6 +40,24 @@ export async function handleGetStatements(
 
   const { from, to, page } = parsed.data
 
+  // Validate date range
+  const fromDate = new Date(from)
+  const toDate = new Date(to)
+  if (toDate <= fromDate) {
+    return Response.json(
+      { error: { code: "validation_error", message: "to must be after from" } },
+      { status: 400 },
+    )
+  }
+  const diffMs = toDate.getTime() - fromDate.getTime()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+  if (diffDays > 31) {
+    return Response.json(
+      { error: { code: "validation_error", message: "Date range must not exceed 31 days" } },
+      { status: 400 },
+    )
+  }
+
   // 3. Proxy to Worldpay
   try {
     const result = (await deps.wpCall(

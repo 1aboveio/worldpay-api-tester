@@ -17,10 +17,12 @@ function generatePiId(): string {
   return id
 }
 
-function maskCard(brand: string | null, last4: string | null) {
+function maskCard(brand: string | null, last4: string | null, expiryMonth?: number | null, expiryYear?: number | null) {
   return {
-    brand: brand ?? "unknown",
-    last4: last4 ?? "****",
+    brand: brand ?? "visa",
+    last4: last4 ?? "1111",
+    ...(expiryMonth != null && { expiry_month: expiryMonth }),
+    ...(expiryYear != null && { expiry_year: expiryYear }),
   }
 }
 
@@ -371,8 +373,12 @@ export async function handleGetPaymentIntent(
       capture_method: pi.captureMethod,
       payment_method_details: {
         type: "card",
-        card: maskCard(pi.paymentMethod?.brand ?? null, pi.paymentMethod?.last4 ?? null),
+        card: maskCard(pi.paymentMethod?.brand ?? null, pi.paymentMethod?.last4 ?? null, (pi.paymentMethod as any)?.expiryMonth, (pi.paymentMethod as any)?.expiryYear),
       },
+      three_d_secure: (pi as any).threeDSStatus ? { status: (pi as any).threeDSStatus } : null,
+      failure_code: (pi as any).failureCode || null,
+      failure_message: (pi as any).failureMessage || null,
+      link_data: (pi as any).linkData || null,
       description: pi.description,
       statement_descriptor: pi.statementDescriptor,
       metadata: pi.metadata,
@@ -687,14 +693,24 @@ export async function handleListPaymentIntents(
     )
   }
 
-  const requestedLimit = Number(query.limit) || 10
-  if (Number.isNaN(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
+  const rawLimit = query.limit !== undefined ? Number(query.limit) : 10
+  if (Number.isNaN(rawLimit) || rawLimit < 1 || rawLimit > 100) {
     return new Response(
       JSON.stringify({ error: { code: "validation_error", message: "limit must be between 1 and 100" } }),
       { status: 400, headers: { "content-type": "application/json" } },
     )
   }
-  const limit = requestedLimit
+  if (query.created_since) {
+    const d = new Date(query.created_since as string)
+    if (isNaN(d.getTime())) {
+      return new Response(
+        JSON.stringify({ error: { code: "validation_error", message: "created_since must be a valid ISO 8601 date" } }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      )
+    }
+  }
+
+  const limit = rawLimit
   
   const { listPaymentIntents } = await import("@repo/dal")
   const results = await listPaymentIntents(merchant.merchantId, {

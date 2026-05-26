@@ -195,7 +195,14 @@ export const database = {
       if (where) {
         pis = pis.filter(pi => {
           for (const [k, v] of Object.entries(where)) {
-            if (pi[k] !== v) return false
+            const piVal = pi[k]
+            if (v && typeof v === 'object' && 'gte' in (v as any)) {
+              if (piVal instanceof Date && (v as any).gte instanceof Date) {
+                if (piVal < (v as any).gte) return false
+              }
+            } else if (piVal !== v) {
+              return false
+            }
           }
           return true
         })
