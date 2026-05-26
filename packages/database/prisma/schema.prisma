@@ -8,33 +8,85 @@ datasource db {
 }
 
 model Merchant {
-  id              String   @id @default(cuid())
-  name            String
-  apiKey          String   @map("api_key")
-  worldpayEntity  String   @map("worldpay_entity")
-  payfacSchemeId  String?  @map("payfac_scheme_id")
-  subMerchantRef  Json?    @map("sub_merchant_ref")
-  subMerchantName String?  @map("sub_merchant_name")
-  subMerchantAddress Json? @map("sub_merchant_address")
-  fraudsightConfig Json?   @map("fraudsight_config")
-  status          String   @default("active")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-
-  apiKeys ApiKey[]
-
-  @@map("merchants")
+  id             String           @id @default(cuid())
+  name           String
+  entity         String           @unique
+  payFacConfig   Json
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  apiKeys        ApiKey[]
+  paymentMethods PaymentMethod[]
+  paymentIntents PaymentIntent[]
 }
 
 model ApiKey {
   id         String   @id @default(cuid())
-  merchantId String   @map("merchant_id")
-  keyHash    String   @map("key_hash")
-  scopes     String   @default("read,write")
-  createdAt  DateTime @default(now()) @map("created_at")
+  keyHash    String   @unique
+  prefix     String
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
 
-  merchant Merchant @relation(fields: [merchantId], references: [id])
+model PaymentMethod {
+  id            String           @id
+  merchantId    String
+  merchant      Merchant         @relation(fields: [merchantId], references: [id])
+  type          String           @default("card")
+  tokenHref     String
+  brand         String?
+  last4         String?
+  expiryMonth   Int?
+  expiryYear    Int?
+  funding       String?
+  country       String?
+  cardholderName String?
+  billingAddress Json?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  paymentIntents PaymentIntent[]
+}
 
-  @@unique([keyHash])
-  @@map("api_keys")
+enum PaymentIntentStatus {
+  created
+  processing
+  tokenizing
+  tokenized
+  risk_assessing
+  risk_assessed
+  authorizing
+  requires_capture
+  succeeded
+  canceled
+  payment_failed
+}
+
+model PaymentIntent {
+  id               String                @id
+  merchantId       String
+  merchant         Merchant              @relation(fields: [merchantId], references: [id])
+  amount           Int
+  currency         String
+  status           PaymentIntentStatus   @default(created)
+  captureMethod    String                @default("automatic")
+  paymentMethodId  String?
+  paymentMethod    PaymentMethod?        @relation(fields: [paymentMethodId], references: [id])
+  worldpayPaymentId String?
+  schemeReference  String?
+  linkData         Json?
+  threeDSStatus    String?
+  failureCode      String?
+  failureMessage   String?
+  metadata         Json?
+  idempotencyKey   String?
+  description      String?
+  statementDescriptor String?
+  setupFutureUsage String?
+  customerEmail    String?
+  customerIpAddress String?
+  shipping         Json?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
 }

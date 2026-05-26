@@ -2,28 +2,21 @@
   "name": "worldpay-api-tester",
   "private": true,
   "scripts": {
-    "dev": "turbo dev",
     "build": "turbo build",
+    "dev": "turbo dev",
     "lint": "turbo lint",
     "db:generate": "turbo db:generate",
     "db:push": "turbo db:push",
-    "check": "turbo lint typecheck",
-    "test": "cd apps/gateway && pnpm test"
+    "test": "turbo test --filter=@apps/gateway",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\""
   },
   "devDependencies": {
-    "turbo": "^2.5.0",
-    "typescript": "^5.7.0"
+    "prettier": "^3.2.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0"
   },
-  "packageManager": "pnpm@10.6.4",
+  "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": ">=20"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@prisma/engines",
-      "esbuild",
-      "prisma",
-      "sharp"
-    ]
+    "node": ">=20.19.0"
   }
 }

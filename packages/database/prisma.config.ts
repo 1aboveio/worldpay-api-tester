@@ -1,8 +1,4 @@
-import { config } from "dotenv"
-
-// Load .env from repo root (relative to packages/database)
-config({ path: new URL("../../.env", import.meta.url).pathname })
-
+import "dotenv/config"
 import { defineConfig, env } from "prisma/config"
 
 export default defineConfig({

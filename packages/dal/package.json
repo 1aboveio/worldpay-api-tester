@@ -6,9 +6,5 @@
   "dependencies": {
     "@repo/database": "workspace:*",
     "server-only": "^0.0.1"
-  },
-  "devDependencies": {
-    "@repo/typescript-config": "workspace:*",
-    "typescript": "^5.7.0"
   }
 }

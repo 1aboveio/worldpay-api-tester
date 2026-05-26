@@ -1,78 +1,48 @@
-import { NextRequest, NextResponse } from "next/server"
-import { z } from "zod"
-import { authMiddleware, resolveMerchant } from "@/lib/middleware"
+import { NextRequest } from "next/server"
+import {
+  handleCreatePaymentIntent,
+  type PaymentIntentServiceDeps,
+} from "@/lib/payment-intent-service"
 
-// ---- Zod schema -----------------------------------------------------------
-
-const paymentIntentSchema = z.object({
-  amount: z.number().positive(),
-  currency: z.string().length(3),
-  token: z.string().min(1).max(256).optional(),
-  cardNumber: z.string().min(12).max(19).optional(),
-  expiryMonth: z.number().int().min(1).max(12).optional(),
-  expiryYear: z.number().int().min(2025).max(2099).optional(),
-  cvc: z.string().min(3).max(4).optional(),
-  merchantReference: z.string().max(256).optional(),
-})
-
-export type PaymentIntentInput = z.infer<typeof paymentIntentSchema>
-
-// ---- Error helper ---------------------------------------------------------
-
-function errorResponse(
-  code: string,
-  message: string,
-  status: number
-): NextResponse {
-  return NextResponse.json({ error: { code, message } }, { status })
+// These are the real production dependencies.
+// Tests override them via module mocking or dependency injection.
+const defaultDeps: PaymentIntentServiceDeps = {
+  wpCall: async () => {
+    throw new Error("wpCall not configured")
+  },
+  createToken: async () => {
+    throw new Error("createToken not configured")
+  },
+  resolveMerchant: async (apiKey: string) => {
+    // In production, this would look up the API key in the database.
+    // For now, this is a placeholder — real auth will be wired in from #1.
+    throw new Error("resolveMerchant not configured")
+  },
 }
 
-// ---- Handler --------------------------------------------------------------
+// Allow tests to override deps
+let overrides: Partial<PaymentIntentServiceDeps> | null = null
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
-  // --- 1. Auth middleware ---
-  const authResult = await authMiddleware(request)
-  if (authResult instanceof NextResponse) return authResult
+export function __setDeps(deps: Partial<PaymentIntentServiceDeps>) {
+  overrides = deps
+}
 
-  // --- 2. Resolve merchant from the pre-resolved API key record ---
-  const merchant = resolveMerchant(authResult)
-  if (!merchant) {
-    return errorResponse("invalid_api_key", "Could not resolve merchant", 401)
-  }
+export function __resetDeps() {
+  overrides = null
+}
 
-  // --- 3. Parse and validate body ---
-  let body: unknown
-  try {
-    body = await request.json()
-  } catch {
-    return errorResponse("invalid_request", "Request body must be valid JSON", 400)
-  }
+function getDeps(): PaymentIntentServiceDeps {
+  return { ...defaultDeps, ...overrides }
+}
 
-  const parsed = paymentIntentSchema.safeParse(body)
-  if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0]
-    return errorResponse(
-      "validation_error",
-      firstIssue?.message ?? "Invalid request body",
-      400
-    )
-  }
+function extractApiKey(request: NextRequest): string {
+  const auth = request.headers.get("authorization")
+  if (!auth?.startsWith("Bearer ")) return ""
+  return auth.slice(7)
+}
 
-  const input = parsed.data
-
-  // --- 4. Return resolved merchant + parsed input (token creation deferred to later ACs) ---
-  return NextResponse.json({
-    merchant: {
-      id: merchant.id,
-      name: merchant.name,
-      worldpayEntity: merchant.worldpayEntity,
-      status: merchant.status,
-    },
-    paymentIntent: {
-      amount: input.amount,
-      currency: input.currency,
-      token: input.token ?? null,
-      merchantReference: input.merchantReference ?? null,
-    },
-  })
+export async function POST(request: NextRequest) {
+  const apiKey = extractApiKey(request)
+  const body = await request.json().catch(() => null)
+  return handleCreatePaymentIntent(body, apiKey, getDeps())
 }

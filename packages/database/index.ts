@@ -1,2 +1,2 @@
+export * from "./generated/prisma"
 export { database } from "./client"
-export type { Merchant, ApiKey } from "./generated/prisma/client"
