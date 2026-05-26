@@ -17,7 +17,7 @@ steps:
       - |
         corepack enable
         corepack prepare pnpm@latest --activate
-        npx prisma generate
+        cd packages/database && pnpm prisma generate
 
   - name: 'node:22'
     entrypoint: 'bash'
