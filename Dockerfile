@@ -29,8 +29,8 @@ RUN pnpm install --frozen-lockfile
 # Generate Prisma client
 RUN pnpm --filter @repo/database db:generate
 
-# Build Next.js (skip portal pages that require full setup)
-RUN rm -rf apps/gateway/src/app/\(portal\) && pnpm --filter @apps/gateway build
+# Build Next.js
+RUN pnpm --filter @apps/gateway build
 
 # Stage 2: Runtime
 FROM node:22-alpine AS runner
