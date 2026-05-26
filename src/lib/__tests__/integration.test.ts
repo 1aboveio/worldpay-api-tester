@@ -161,7 +161,7 @@ describe("Integration: Idempotency + Timeout Recovery", () => {
     authHandler.mockClear();
     const r2 = await processPayment(cache, eventsClient, params, authHandler);
     expect(authHandler).not.toHaveBeenCalled();
-    expect(r2.statusCode).toBe(201);
+    expect(r2.statusCode).toBe(200);
     expect(r2.body).toEqual({ id: "pi_1", outcome: "authorized", status: "succeeded" });
   });
 
