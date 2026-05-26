@@ -28,7 +28,7 @@ steps:
       - |
         corepack enable
         corepack prepare pnpm@latest --activate
-        pnpm test -- --run
+        pnpm --filter @apps/gateway test
 
 timeout: 600s
 options:
