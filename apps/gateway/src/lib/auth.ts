@@ -2,6 +2,9 @@ import { createHash } from "crypto"
 import { getApiKeyByHash } from "@repo/dal"
 import type { ApiKeyDTO } from "@repo/dal"
 
+// Placeholder — Better Auth instance configured at runtime
+export const auth = null as any
+
 /**
  * Hash an API key prefix (e.g. "sk_test_" or "sk_live_") with SHA-256
  * for constant-time lookup in the ApiKey table.

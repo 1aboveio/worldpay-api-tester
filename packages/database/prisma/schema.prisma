@@ -90,3 +90,93 @@ model PaymentIntent {
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 }
+
+// Better Auth models
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                    String  @id @default(cuid())
+  userId                String
+  user                  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerId            String
+  accountId             String
+  password              String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([providerId, accountId])
+}
+
+model Verification {
+  id        String   @id @default(cuid())
+  identifier String
+  value     String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Portal models
+model UserMerchant {
+  id         String   @id @default(cuid())
+  userId     String
+  merchantId String
+  role       String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, merchantId])
+}
+
+model Refund {
+  id               String   @id @default(cuid())
+  merchantId       String
+  paymentIntentId  String
+  amount           Int
+  currency         String
+  reason           String?
+  status           String
+  worldpayRefundId String?
+  idempotencyKey   String?
+  createdAt        DateTime @default(now())
+}
+
+model Statement {
+  id                String   @id @default(cuid())
+  merchantId        String?
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  totalVolume       Int?
+  status            String?
+  createdAt         DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  merchantId String?
+  action     String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+}

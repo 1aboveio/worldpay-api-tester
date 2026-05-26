@@ -1,5 +1,10 @@
 {
   "name": "@repo/typescript-config",
   "private": true,
-  "files": ["base.json", "nextjs.json", "server.json"]
+  "files": ["base.json", "nextjs.json", "server.json"],
+  "exports": {
+    "./nextjs.json": "./nextjs.json",
+    "./server.json": "./server.json",
+    "./base.json": "./base.json"
+  }
 }

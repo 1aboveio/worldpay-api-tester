@@ -3,7 +3,7 @@ import type {
   ThreeDSVerifyResponse,
   ThreeDSInjection,
 } from "@payfac/worldpay-client";
-import prisma from "../client.js";
+import prisma from "../client";
 
 export interface Verify3DSParams {
   worldpayClient: IWorldpayClient;

@@ -167,3 +167,4 @@ export interface IWorldpayClient {
   threeDSVerify(params: ThreeDSVerifyRequest): Promise<ThreeDSVerifyResponse>;
   citAuthorize(params: CITAuthorizeRequest): Promise<CITAuthorizeResponse>;
 }
+export { WorldpayClient } from "./client"

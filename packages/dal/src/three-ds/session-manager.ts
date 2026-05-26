@@ -1,4 +1,4 @@
-import prisma from "../client.js";
+import prisma from "../client";
 
 export class ThreeDSSessionManager {
   /** Create or find an existing session for a payment intent */

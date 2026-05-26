@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleChallengeCallback } from "@payfac/gateway-core";
-import { findPaymentIntentWithMerchant } from "@repo/dal";
+import { getPaymentIntentByIdAndMerchant } from "@repo/dal";
 import { getWorldpayClient } from "@/lib/worldpay";
 
 export async function GET(request: NextRequest) {
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Look up PaymentIntent
-    const pi = await findPaymentIntentWithMerchant(piId);
+    const pi = await getPaymentIntentByIdAndMerchant(piId);
     if (!pi) {
       return NextResponse.json(
         { error: { code: "not_found", message: "PaymentIntent not found" } },

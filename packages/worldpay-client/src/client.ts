@@ -8,8 +8,8 @@ import type {
   ThreeDSVerifyResponse,
   CITAuthorizeRequest,
   CITAuthorizeResponse,
-} from "./index.js";
-import { MEDIA_TYPES } from "./index.js";
+} from "./index";
+import { MEDIA_TYPES } from "./index";
 
 export class WorldpayClient implements IWorldpayClient {
   constructor(

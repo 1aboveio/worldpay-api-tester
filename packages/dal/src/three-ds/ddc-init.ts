@@ -2,7 +2,7 @@ import type {
   IWorldpayClient,
   DdcInitResponse,
 } from "@payfac/worldpay-client";
-import prisma from "../client.js";
+import prisma from "../client";
 
 export interface DdcInitParams {
   worldpayClient: IWorldpayClient;

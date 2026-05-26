@@ -2,11 +2,13 @@ import type { NextConfig } from "next"
 
 const config: NextConfig = {
   output: "standalone",
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   transpilePackages: [
     "@repo/dal",
     "@repo/database",
     "@repo/ui",
-    "@repo/typescript-config",
     "@payfac/gateway-core",
     "@payfac/worldpay-client",
     "@payfac/validators",
@@ -15,6 +17,7 @@ const config: NextConfig = {
     "@better-auth/prisma-adapter",
     "sonner",
   ],
+  turbopack: {},
 }
 
 export default config

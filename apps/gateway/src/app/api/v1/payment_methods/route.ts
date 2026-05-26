@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { createPaymentMethodSchema } from "./schema";
 import { extractBearerToken, resolveMerchantFromApiKey } from "@/lib/auth";
-import { wpCall } from "@/lib/worldpay-client";
+import { worldpayRequest } from "@/lib/worldpay-client";
 import { encrypt } from "@/lib/encryption";
 import { generatePaymentMethodId } from "@/lib/id-generator";
 import { createPaymentMethod, getPaymentMethodById, getPaymentMethodByIdempotencyKey } from "@repo/dal";
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
     // --- Call Worldpay Tokens v3 ---
     // Card number is sent to Worldpay but NEVER logged or stored locally.
-    const worldpayRequest = {
+    const wpRequestBody = {
       tokenType: "card",
       paymentInstrument: {
         type: "card/plain",
@@ -96,11 +96,11 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    const wpResponse = await wpCall({
+    const wpResponse = await worldpayRequest({
       method: "POST",
       path: "/tokens",
       mediaType: TOKENS_MEDIA_TYPE,
-      body: worldpayRequest,
+      body: wpRequestBody,
     });
 
     const wpBody = await wpResponse.json();

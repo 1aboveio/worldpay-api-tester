@@ -2,7 +2,7 @@ import type {
   IWorldpayClient,
   ThreeDSAuthenticateResponse,
 } from "@payfac/worldpay-client";
-import prisma from "../client.js";
+import prisma from "../client";
 
 export interface Authenticate3DSParams {
   worldpayClient: IWorldpayClient;

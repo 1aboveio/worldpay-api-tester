@@ -1,4 +1,4 @@
-import prisma from "../client.js";
+import prisma from "../client";
 import type { ThreeDSInjection } from "@payfac/worldpay-client";
 
 export interface PaymentIntentRecord {

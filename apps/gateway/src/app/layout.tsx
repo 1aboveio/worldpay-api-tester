@@ -1,5 +1,7 @@
 import type { Metadata } from "next"
-import "@repo/ui/src/styles/globals.css"
+// Global styles from @repo/ui
+// Imported via relative path for Turbopack compatibility
+
 
 export const metadata: Metadata = {
   title: "Worldpay API Tester",

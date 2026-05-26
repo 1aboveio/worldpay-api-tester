@@ -4,7 +4,7 @@ import {
   runThreeDSFlow,
   authorizeWithThreeDS,
 } from "@payfac/gateway-core";
-import { findPaymentIntentWithMerchant, updatePaymentIntentStatus } from "@repo/dal";
+import { getPaymentIntentByIdAndMerchant, updatePaymentIntentStatus } from "@repo/dal";
 import { getWorldpayClient } from "@/lib/worldpay";
 
 export async function POST(
@@ -27,7 +27,7 @@ export async function POST(
     const { collection_reference, accept_header, user_agent } = parsed.data;
 
     // Look up PaymentIntent
-    const pi = await findPaymentIntentWithMerchant(paymentIntentId);
+    const pi = await getPaymentIntentByIdAndMerchant(paymentIntentId);
     if (!pi) {
       return NextResponse.json(
         { error: { code: "not_found", message: "PaymentIntent not found" } },
