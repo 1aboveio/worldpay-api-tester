@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server"
 import {
   handleCreatePaymentIntent,
+  handleListPaymentIntents,
   type PaymentIntentServiceDeps,
 } from "@/lib/payment-intent-service"
 

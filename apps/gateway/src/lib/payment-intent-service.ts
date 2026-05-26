@@ -679,15 +679,32 @@ export async function handleListPaymentIntents(
     )
   }
 
-  const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100)
-  const where: Record<string, unknown> = { merchantId: merchant.id }
+  const requestedLimit = Number(query.limit) || 10
+  const limit = Math.min(Math.max(requestedLimit, 1), 100)
   
-  // Note: PaymentIntentStatus is from @repo/database mock
-  // In production, only return terminal/non-internal statuses
+  const { listPaymentIntents } = await import("@repo/dal")
+  const results = await listPaymentIntents(merchant.merchantId, {
+    limit,
+    createdSince: query.created_since as string | undefined,
+  })
   
-  const data = [] as Record<string, unknown>[]
+  const { formatPaymentIntentResponse } = await import("./format-pi-response")
+  const data = (results ?? []).map((pi: any) => ({
+    id: pi.id,
+    object: "payment_intent",
+    amount: pi.amount,
+    currency: pi.currency,
+    status: pi.status,
+    created: (pi as any).createdAt?.toISOString?.() ?? new Date().toISOString(),
+    payment_method_details: pi.paymentMethod ? {
+      card: {
+        brand: pi.paymentMethod.brand ?? "unknown",
+        last4: pi.paymentMethod.last4 ?? "****",
+      },
+    } : undefined,
+  }))
   return new Response(
-    JSON.stringify({ object: "list", data, has_more: false }),
+    JSON.stringify({ object: "list", data, has_more: data.length >= limit }),
     { status: 200, headers: { "content-type": "application/json" } },
   )
 }
