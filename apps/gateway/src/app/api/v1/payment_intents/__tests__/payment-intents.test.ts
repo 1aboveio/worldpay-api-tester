@@ -610,3 +610,142 @@ describe("GET /api/v1/payment_intents/{id}", () => {
     expect(body.error.code).toBe("invalid_api_key")
   })
 })
+
+// ─── MIT Payment Tests ─────────────────────────────────────────
+
+describe("MIT Payments", () => {
+  it("routes card_token without three_d_secure to MIT", async () => {
+    const { wpCall, createToken, resolveMerchant } = setupDeps()
+    vi.mocked(wpCall).mockImplementation(async (path: string) => {
+      if (path === "/cardPayments/merchantInitiatedTransactions") {
+        return { outcome: "authorized", paymentId: "pay_mit_001", _links: {} }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    // Seed a payment method and prior CIT with setup_future_usage
+    const { createPaymentIntent, createPaymentMethod } = await import("@repo/dal")
+    await createPaymentMethod({ id: "pm_abc123def456", merchantId: "m_test001", type: "card", tokenHref: "/tokens/tok_mit", brand: "visa", last4: "1111" })
+    await createPaymentMethod({ id: "pm_abc123def456", merchantId: "m_test001", type: "card", tokenHref: "/tokens/tok_mit", brand: "visa", last4: "1111" })
+    await createPaymentIntent({
+      id: "pi_prior_cit", merchantId: "m_test001", amount: 100, currency: "USD",
+      status: "succeeded", paymentMethodId: "pm_abc123def456",
+      setupFutureUsage: "off_session", schemeReference: "SCHEME_REF_001",
+    })
+
+    const res = await makeRequest({
+      amount: 100, currency: "usd",
+      payment_method: { type: "card_token", token: "pm_abc123def456" },
+      confirm: true,
+    })
+    const body = await jsonBody(res)
+    expect(res.status).toBe(200)
+    expect(body.status).toBe("succeeded")
+    // Verify MIT endpoint was called, not CIT
+    expect(wpCall).toHaveBeenCalledWith(
+      "/cardPayments/merchantInitiatedTransactions",
+      expect.any(String),
+      expect.objectContaining({
+        instruction: expect.objectContaining({
+          customerAgreement: expect.objectContaining({
+            storedCardUsage: "subsequent",
+            schemeReference: "SCHEME_REF_001",
+          }),
+        }),
+      }),
+    )
+  })
+
+  it("MIT skips FraudSight, DDC, and 3DS", async () => {
+    const { wpCall } = setupDeps()
+    const calledPaths: string[] = []
+    vi.mocked(wpCall).mockImplementation(async (path: string) => {
+      calledPaths.push(path)
+      if (path === "/cardPayments/merchantInitiatedTransactions") {
+        return { outcome: "authorized", paymentId: "pay_mit_002", _links: {} }
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const { createPaymentIntent, createPaymentMethod } = await import("@repo/dal")
+    await createPaymentMethod({ id: "pm_abc123def456", merchantId: "m_test001", type: "card", tokenHref: "/tokens/tok_mit", brand: "visa", last4: "1111" })
+    await createPaymentIntent({
+      id: "pi_prior_cit2", merchantId: "m_test001", amount: 100, currency: "USD",
+      status: "succeeded", paymentMethodId: "pm_abc123def456",
+      setupFutureUsage: "off_session", schemeReference: "SCHEME_REF_002",
+    })
+
+    await makeRequest({
+      amount: 100, currency: "usd",
+      payment_method: { type: "card_token", token: "pm_abc123def456" },
+      confirm: true,
+    })
+    // Must NOT call FraudSight, DDC, or 3DS
+    expect(calledPaths).not.toContain("/fraudsight/assessment")
+    expect(calledPaths).not.toContain("/verifications/customers/3ds/deviceDataInitialize")
+    expect(calledPaths).not.toContain("/verifications/customers/3ds/authenticate")
+  })
+
+  it("MIT without prior CIT returns 400", async () => {
+    setupDeps()
+    const res = await makeRequest({
+      amount: 100, currency: "usd",
+      payment_method: { type: "card_token", token: "pm_nonexistent" },
+      confirm: true,
+    })
+    const body = await jsonBody(res)
+    expect(res.status).toBe(400)
+    expect(body.error.code).toBe("token_invalid")
+  })
+
+  it("MIT with CIT lacking setup_future_usage returns 400", async () => {
+    setupDeps()
+    const { createPaymentIntent, createPaymentMethod } = await import("@repo/dal")
+    await createPaymentMethod({ id: "pm_abc123def456", merchantId: "m_test001", type: "card", tokenHref: "/tokens/tok_mit", brand: "visa", last4: "1111" })
+    await createPaymentIntent({
+      id: "pi_cit_no_mit", merchantId: "m_test001", amount: 100, currency: "USD",
+      status: "succeeded", paymentMethodId: "pm_abc123def456",
+      // No setupFutureUsage — so MIT should fail
+    })
+    const res = await makeRequest({
+      amount: 100, currency: "usd",
+      payment_method: { type: "card_token", token: "pm_abc123def456" },
+      confirm: true,
+    })
+    const body = await jsonBody(res)
+    expect(res.status).toBe(400)
+    expect(body.error.code).toBe("mit_requires_cit")
+  })
+
+  it("multiple MIT payments against same token", async () => {
+    const { wpCall } = setupDeps()
+    vi.mocked(wpCall).mockResolvedValue({ outcome: "authorized", paymentId: "pay_mit_multi", _links: {} })
+    const { createPaymentIntent, createPaymentMethod } = await import("@repo/dal")
+    await createPaymentMethod({ id: "pm_abc123def456", merchantId: "m_test001", type: "card", tokenHref: "/tokens/tok_mit", brand: "visa", last4: "1111" })
+    await createPaymentIntent({
+      id: "pi_prior_multi", merchantId: "m_test001", amount: 100, currency: "USD",
+      status: "succeeded", paymentMethodId: "pm_abc123def456",
+      setupFutureUsage: "off_session", schemeReference: "SCHEME_MULTI",
+    })
+
+    const res1 = await makeRequest({ amount: 100, currency: "usd", payment_method: { type: "card_token", token: "pm_abc123def456" }, confirm: true })
+    const res2 = await makeRequest({ amount: 200, currency: "usd", payment_method: { type: "card_token", token: "pm_abc123def456" }, confirm: true })
+    expect((await jsonBody(res1)).status).toBe("succeeded")
+    expect((await jsonBody(res2)).status).toBe("succeeded")
+    expect(wpCall).toHaveBeenCalledTimes(2)
+  })
+
+  it("MIT with manual capture returns requires_capture", async () => {
+    const { wpCall } = setupDeps()
+    vi.mocked(wpCall).mockResolvedValue({ outcome: "authorized", paymentId: "pay_mit_manual", _links: {} })
+    const { createPaymentIntent, createPaymentMethod } = await import("@repo/dal")
+    await createPaymentMethod({ id: "pm_abc123def456", merchantId: "m_test001", type: "card", tokenHref: "/tokens/tok_mit", brand: "visa", last4: "1111" })
+    await createPaymentIntent({
+      id: "pi_prior_manual", merchantId: "m_test001", amount: 100, currency: "USD",
+      status: "succeeded", paymentMethodId: "pm_abc123def456",
+      setupFutureUsage: "off_session", schemeReference: "SCHEME_MANUAL",
+    })
+
+    const res = await makeRequest({ amount: 100, currency: "usd", payment_method: { type: "card_token", token: "pm_abc123def456" }, confirm: true, capture_method: "manual" })
+    const body = await jsonBody(res)
+    expect(body.status).toBe("requires_capture")
+  })
+})

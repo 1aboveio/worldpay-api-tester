@@ -31,14 +31,16 @@ export async function getPaymentMethodByIdAndMerchant(id: string, merchantId: st
 }
 
 export async function getLatestCitWithSetupFutureUsage(paymentMethodId: string) {
-  return database.paymentIntent.findFirst({
-    where: {
-      paymentMethodId,
-      setupFutureUsage: "off_session",
-      status: { in: ["succeeded", "requires_capture"] },
-    },
+  // Query for the latest CIT with setup_future_usage (any status that allows MIT)
+  const all = await database.paymentIntent.findMany({
+    where: { paymentMethodId, setupFutureUsage: "off_session" },
     orderBy: { createdAt: "desc" },
-  }) as any
+    take: 1,
+  }) as any[]
+  if (all.length === 0) return null
+  const cit = all[0]
+  if (cit.status !== "succeeded" && cit.status !== "requires_capture") return null
+  return cit
 }
 
 export async function getPaymentMethodByIdempotencyKey(merchantId: string, idempotencyKey: string) {
