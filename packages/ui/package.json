@@ -1,0 +1,15 @@
+{
+  "name": "@repo/ui",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./tailwind.config": "./tailwind.config.ts",
+    "./globals.css": "./src/styles/globals.css"
+  },
+  "dependencies": {
+    "tailwindcss": "^4.0.0",
+    "tailwindcss-animate": "^1.0.7"
+  }
+}

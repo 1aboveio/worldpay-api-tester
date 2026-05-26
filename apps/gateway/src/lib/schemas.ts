@@ -51,3 +51,9 @@ export const createPaymentIntentSchema = z.object({
 })
 
 export type CreatePaymentIntentInput = z.infer<typeof createPaymentIntentSchema>
+
+export const capturePaymentIntentSchema = z.object({
+  amount_to_capture: z.number().int().optional(),
+})
+
+export type CapturePaymentIntentInput = z.infer<typeof capturePaymentIntentSchema>
