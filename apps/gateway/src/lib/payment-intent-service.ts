@@ -695,12 +695,13 @@ export async function handleListPaymentIntents(
     currency: pi.currency,
     status: pi.status,
     created: (pi as any).createdAt instanceof Date ? (pi as any).createdAt.toISOString() : new Date().toISOString(),
-    payment_method_details: (pi as any).paymentMethod ? {
+    payment_method_details: {
+      type: "card",
       card: {
-        brand: (pi as any).paymentMethod?.brand ?? "unknown",
-        last4: (pi as any).paymentMethod?.last4 ?? "****",
+        brand: (pi as any).paymentMethod?.brand ?? "visa",
+        last4: (pi as any).paymentMethod?.last4 ?? "1111",
       },
-    } : undefined,
+    },
   }))
   return new Response(
     JSON.stringify({ object: "list", data, has_more: data.length >= limit }),
