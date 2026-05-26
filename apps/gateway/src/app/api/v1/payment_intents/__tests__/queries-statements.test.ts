@@ -466,7 +466,7 @@ describe("GET /api/v1/payment_intents", () => {
       const body = await jsonBody(res)
 
       expect(res.status).toBe(401)
-      expect(body.error.code).toBe("authentication_error")
+      expect(body.error.code).toBe("invalid_api_key")
     })
 
     it("returns 401 for missing API key", async () => {
@@ -478,7 +478,7 @@ describe("GET /api/v1/payment_intents", () => {
       const body = await jsonBody(res)
 
       expect(res.status).toBe(401)
-      expect(body.error.code).toBe("authentication_error")
+      expect(body.error.code).toBe("invalid_api_key")
     })
   })
 })
@@ -826,7 +826,7 @@ describe("GET /api/v1/statements", () => {
       const body = await jsonBody(res)
 
       expect(res.status).toBe(401)
-      expect(body.error.code).toBe("authentication_error")
+      expect(body.error.code).toBe("invalid_api_key")
     })
   })
 

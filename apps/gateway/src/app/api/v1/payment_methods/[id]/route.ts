@@ -11,7 +11,7 @@ export async function GET(
     const token = extractBearerToken(request.headers.get("authorization"));
     if (!token) {
       return NextResponse.json(
-        { error: { code: "unauthorized", message: "Missing or invalid Authorization header" } },
+        { error: { code: "invalid_api_key", message: "Missing or invalid Authorization header" } },
         { status: 401 },
       );
     }
@@ -19,7 +19,7 @@ export async function GET(
     const auth = await resolveMerchantFromApiKey(token);
     if (!auth) {
       return NextResponse.json(
-        { error: { code: "unauthorized", message: "Invalid API key" } },
+        { error: { code: "invalid_api_key", message: "Invalid API key" } },
         { status: 401 },
       );
     }

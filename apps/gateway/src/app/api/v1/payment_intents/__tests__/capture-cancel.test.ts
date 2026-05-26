@@ -485,7 +485,7 @@ describe("POST /api/v1/payment_intents/{id}/capture", () => {
       const body = await jsonBody(res)
 
       expect(res.status).toBe(401)
-      expect(body.error.code).toBe("authentication_error")
+      expect(body.error.code).toBe("invalid_api_key")
     })
   })
 })
@@ -666,7 +666,7 @@ describe("POST /api/v1/payment_intents/{id}/cancel", () => {
       const body = await jsonBody(res)
 
       expect(res.status).toBe(401)
-      expect(body.error.code).toBe("authentication_error")
+      expect(body.error.code).toBe("invalid_api_key")
     })
   })
 })

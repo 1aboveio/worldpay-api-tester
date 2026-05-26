@@ -436,7 +436,7 @@ describe("POST /api/v1/payment_intents", () => {
       const res = await makeRequest(cardRequest(), "bad_key")
       const body = await jsonBody(res)
       expect(res.status).toBe(401)
-      expect(body.error.code).toBe("authentication_error")
+      expect(body.error.code).toBe("invalid_api_key")
     })
   })
 
@@ -606,6 +606,6 @@ describe("GET /api/v1/payment_intents/{id}", () => {
     const body = await jsonBody(res)
 
     expect(res.status).toBe(401)
-    expect(body.error.code).toBe("authentication_error")
+    expect(body.error.code).toBe("invalid_api_key")
   })
 })

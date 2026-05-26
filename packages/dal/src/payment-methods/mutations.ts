@@ -16,10 +16,23 @@ export type CreatePaymentMethodInput = {
   billingAddress?: Record<string, unknown> | null
 }
 
-export async function createPaymentMethod(input: CreatePaymentMethodInput) {
-  return database.paymentMethod.create({ data: input as Record<string, unknown> })
+export async function createPaymentMethod(input: Record<string, unknown>) {
+  return database.paymentMethod.create({ data: input })
 }
 
 export async function getPaymentMethodById(id: string) {
   return database.paymentMethod.findUnique({ where: { id } })
+}
+
+export async function getPaymentMethodByIdAndMerchant(id: string, merchantId: string) {
+  const pm = await database.paymentMethod.findUnique({ where: { id } })
+  if (!pm || (pm as any).merchantId !== merchantId) return null
+  return pm
+}
+
+export async function getPaymentMethodByIdempotencyKey(merchantId: string, idempotencyKey: string) {
+  const pm = await (database.paymentMethod as any).findFirst?.({
+    where: { merchantId, idempotencyKey },
+  })
+  return pm ?? null
 }

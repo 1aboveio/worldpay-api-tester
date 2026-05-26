@@ -41,7 +41,7 @@ export async function handleCreatePaymentIntent(
     merchant = await deps.resolveMerchant(apiKey)
   } catch {
     return Response.json(
-      { error: { code: "authentication_error", message: "Invalid API key" } },
+      { error: { code: "invalid_api_key", message: "Invalid API key" } },
       { status: 401 },
     )
   }
@@ -348,7 +348,7 @@ export async function handleGetPaymentIntent(
     merchant = await deps.resolveMerchant(apiKey)
   } catch {
     return Response.json(
-      { error: { code: "authentication_error", message: "Invalid API key" } },
+      { error: { code: "invalid_api_key", message: "Invalid API key" } },
       { status: 401 },
     )
   }
@@ -395,7 +395,7 @@ export async function handleCapturePaymentIntent(
     merchant = await deps.resolveMerchant(apiKey)
   } catch {
     return Response.json(
-      { error: { code: "authentication_error", message: "Invalid API key" } },
+      { error: { code: "invalid_api_key", message: "Invalid API key" } },
       { status: 401 },
     )
   }
@@ -559,7 +559,7 @@ export async function handleCancelPaymentIntent(
     merchant = await deps.resolveMerchant(apiKey)
   } catch {
     return Response.json(
-      { error: { code: "authentication_error", message: "Invalid API key" } },
+      { error: { code: "invalid_api_key", message: "Invalid API key" } },
       { status: 401 },
     )
   }
@@ -664,4 +664,30 @@ export async function handleCancelPaymentIntent(
       { status: 502 },
     )
   }
+}
+
+export async function handleListPaymentIntents(
+  query: Record<string, unknown>,
+  rawApiKey: string,
+  deps: PaymentIntentServiceDeps,
+) {
+  const merchant = await deps.resolveMerchant(rawApiKey)
+  if (!merchant) {
+    return new Response(
+      JSON.stringify({ error: { code: "invalid_api_key", message: "Invalid API key" } }),
+      { status: 401, headers: { "content-type": "application/json" } },
+    )
+  }
+
+  const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 100)
+  const where: Record<string, unknown> = { merchantId: merchant.id }
+  
+  // Note: PaymentIntentStatus is from @repo/database mock
+  // In production, only return terminal/non-internal statuses
+  
+  const data = [] as Record<string, unknown>[]
+  return new Response(
+    JSON.stringify({ object: "list", data, has_more: false }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  )
 }

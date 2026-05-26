@@ -17,7 +17,7 @@ export async function handleGetStatements(
     merchant = await deps.resolveMerchant(apiKey)
   } catch {
     return Response.json(
-      { error: { code: "authentication_error", message: "Invalid API key" } },
+      { error: { code: "invalid_api_key", message: "Invalid API key" } },
       { status: 401 },
     )
   }

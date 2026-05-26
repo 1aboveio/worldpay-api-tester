@@ -46,3 +46,14 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null)
   return handleCreatePaymentIntent(body, apiKey, getDeps())
 }
+
+export async function GET(request: NextRequest) {
+  const apiKey = extractApiKey(request)
+  const url = new URL(request.url)
+  const limit = url.searchParams.get("limit")
+  const createdSince = url.searchParams.get("created_since")
+  const query: Record<string, unknown> = {}
+  if (limit) query.limit = Number(limit)
+  if (createdSince) query.created_since = createdSince
+  return handleListPaymentIntents(query, apiKey, getDeps())
+}

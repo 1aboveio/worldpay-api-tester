@@ -37,9 +37,12 @@ export interface ResolvedApiKey extends ApiKeyDTO {
  * Returns the resolved API key record with merchant or null.
  */
 export async function resolveMerchantFromApiKey(
-  authorizationHeader: string | null
+  rawTokenOrHeader: string | null
 ): Promise<ResolvedApiKey | null> {
-  const token = extractBearerToken(authorizationHeader)
+  // Accept either a raw token or a full Authorization header
+  const token = rawTokenOrHeader?.startsWith("Bearer ")
+    ? extractBearerToken(rawTokenOrHeader)
+    : rawTokenOrHeader
   if (!token) return null
 
   const keyHash = hashApiKey(token)
