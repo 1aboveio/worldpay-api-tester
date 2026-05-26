@@ -1,4 +1,4 @@
-import { createPaymentIntentSchema, type CreatePaymentIntentInput } from "./schemas"
+import { createPaymentIntentSchema } from "./schemas"
 import type { WpCallFn, CreateTokenFn, ResolveMerchantFn } from "./worldpay-types"
 import {
   createPaymentIntent,
@@ -9,12 +9,7 @@ import {
 import { PaymentIntentStatus } from "@repo/database"
 
 function generatePiId(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-  let id = "pi_"
-  for (let i = 0; i < 14; i++) {
-    id += chars.charAt(Math.floor(Math.random() * chars.length))
-  }
-  return id
+  return `pi_${crypto.randomUUID().replace(/-/g, "").substring(0, 14)}`
 }
 
 function maskCard(brand: string | null, last4: string | null) {
