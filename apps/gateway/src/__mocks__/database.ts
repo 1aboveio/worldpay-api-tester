@@ -41,6 +41,11 @@ const DEFAULT_API_KEY = {
 
 store.merchants.set("merchant_test", DEFAULT_MERCHANT)
 store.apiKeys.set(DEFAULT_API_KEY_HASH, DEFAULT_API_KEY)
+// Seed a second merchant for cross-merchant tests
+const MERCHANT2 = { ...DEFAULT_MERCHANT, id: "merchant_2", name: "Merchant 2" }
+const MERCHANT2_API_KEY_HASH = createHash("sha256").update("sk_test_merchant2").digest("hex")
+store.merchants.set("merchant_2", MERCHANT2)
+store.apiKeys.set(MERCHANT2_API_KEY_HASH, { id: "apikey_2", keyHash: MERCHANT2_API_KEY_HASH, merchantId: "merchant_2", createdAt: new Date() })
 
 export function resetMockStores() {
   store.paymentIntents.clear()
@@ -48,6 +53,8 @@ export function resetMockStores() {
   // Re-seed merchant and API key
   store.merchants.set("merchant_test", { ...DEFAULT_MERCHANT })
   store.apiKeys.set(DEFAULT_API_KEY_HASH, { ...DEFAULT_API_KEY })
+  store.merchants.set("merchant_2", { ...MERCHANT2 })
+  store.apiKeys.set(MERCHANT2_API_KEY_HASH, { id: "apikey_2", keyHash: MERCHANT2_API_KEY_HASH, merchantId: "merchant_2", createdAt: new Date() })
   // Clear other stores
   ;(store as any).users?.clear()
   ;(store as any).userMerchants?.clear()
@@ -139,7 +146,9 @@ export const database = {
     findUnique: async ({ where }: { where: { id: string } }) => {
       const pi = store.paymentIntents.get(where.id)
       if (!pi) return null
-      return { ...withDates(pi), paymentMethod: null }
+      const pmId = pi.paymentMethodId as string | undefined
+      const pm = pmId ? store.paymentMethods.get(pmId) ?? null : null
+      return { ...withDates(pi), paymentMethod: pm }
     },
     findFirst: async ({ where, orderBy }: { where: Record<string, unknown>; orderBy?: Record<string, string> }) => {
       const pis = Array.from(store.paymentIntents.values())
@@ -148,7 +157,11 @@ export const database = {
         for (const [k, v] of Object.entries(where)) {
           if (pi[k] !== v) { match = false; break }
         }
-        if (match) return { ...withDates(pi), paymentMethod: null }
+        if (match) {
+          const pmId = pi.paymentMethodId as string | undefined
+          const pm = pmId ? store.paymentMethods.get(pmId) ?? null : null
+          return { ...withDates(pi), paymentMethod: pm }
+        }
       }
       return null
     },
@@ -171,7 +184,11 @@ export const database = {
       }
       if (skip) pis = pis.slice(skip as number)
       if (take) pis = pis.slice(0, take as number)
-      return pis.map(pi => ({ ...withDates(pi), paymentMethod: null }))
+      return pis.map(pi => {
+        const pmId = pi.paymentMethodId as string | undefined
+        const pm = pmId ? store.paymentMethods.get(pmId) ?? null : null
+        return { ...withDates(pi), paymentMethod: pm }
+      })
     },
     count: async ({ where }: { where?: Record<string, unknown> }) => {
       if (!where) return store.paymentIntents.size
@@ -194,7 +211,7 @@ export const database = {
   },
   paymentMethod: {
     create: async ({ data }: { data: Record<string, unknown> }) => {
-      const record = { ...data, createdAt: new Date(), updatedAt: new Date() }
+      const record = { status: "active", ...data, createdAt: new Date(), updatedAt: new Date() }
       store.paymentMethods.set(data.id as string, record)
       return record
     },
