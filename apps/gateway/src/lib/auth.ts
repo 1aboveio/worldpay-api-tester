@@ -2,6 +2,7 @@ import { createHash } from "crypto"
 import { getApiKeyByHash } from "@repo/dal"
 import type { ApiKeyDTO } from "@repo/dal"
 import { betterAuth } from "better-auth"
+import { nextCookies } from "better-auth/next-js"
 import { prismaAdapter } from "@better-auth/prisma-adapter"
 import { database } from "@repo/database"
 
@@ -15,6 +16,7 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24, // 1 day
   },
+  plugins: [nextCookies()],
 })
 
 /**

@@ -11,10 +11,20 @@ export async function getPortalUserByEmail(email: string) {
 // ─── UserMerchant ─────────────────────────────────────────────
 
 export async function getUserMerchants(userId: string) {
-  return database.userMerchant.findMany({
+  const ums = await database.userMerchant.findMany({
     where: { userId },
-    include: { merchant: true },
   })
+  if (ums.length === 0) return []
+  const merchantIds = ums.map(um => um.merchantId)
+  const merchants = await database.merchant.findMany({
+    where: { id: { in: merchantIds } },
+    select: { id: true, name: true },
+  })
+  const nameMap = new Map(merchants.map(m => [m.id, m.name]))
+  return ums.map(um => ({
+    ...um,
+    merchant: { name: nameMap.get(um.merchantId) ?? "Unknown" },
+  }))
 }
 
 // ─── Merchants ────────────────────────────────────────────────

@@ -59,3 +59,21 @@ export async function getMerchantById(id: string): Promise<MerchantDTO | null> {
     status: merchant.status,
   }
 }
+
+export async function getUserMerchantsForSession(userId: string) {
+  const { database } = await import("@repo/database")
+  const ums = await database.userMerchant.findMany({
+    where: { userId },
+  })
+  if (ums.length === 0) return []
+  const merchantIds = ums.map(um => um.merchantId)
+  const merchants = await database.merchant.findMany({
+    where: { id: { in: merchantIds } },
+    select: { id: true, name: true },
+  })
+  const nameMap = new Map(merchants.map(m => [m.id, m.name]))
+  return ums.map(um => ({
+    ...um,
+    merchant: { name: nameMap.get(um.merchantId) ?? "Unknown" },
+  }))
+}
