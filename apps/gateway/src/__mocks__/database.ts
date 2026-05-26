@@ -66,9 +66,11 @@ export function resetMockStores() {
   store.merchants.set("merchant_2", { ...MERCHANT2 })
   store.apiKeys.set(MERCHANT2_API_KEY_HASH, { id: "apikey_2", keyHash: MERCHANT2_API_KEY_HASH, merchantId: "merchant_2", createdAt: new Date() })
   // Clear other stores
-  ;store.users?.clear()
-  ;store.userMerchants?.clear()
-  ;store.auditLogs = []
+  store.users.clear()
+  store.userMerchants.clear()
+  store.refunds.clear()
+  store.statements.clear()
+  store.auditLogs = []
 }
 
 export function seedMerchant(data: Record<string, unknown>): string {
@@ -81,7 +83,8 @@ export function seedMerchant(data: Record<string, unknown>): string {
     subMerchantRef: data.subMerchantRef || null,
     subMerchantName: data.subMerchantName || null,
     subMerchantAddress: data.subMerchantAddress || null,
-    fraudsightConfig: data.fraudsightConfig || null,
+    fraudsightConfig: data.fraudsightConfig || data.payFacConfig || null,
+    payFacConfig: data.payFacConfig || data.fraudsightConfig || null,
     status: data.status || "active",
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -92,12 +95,7 @@ export function seedMerchant(data: Record<string, unknown>): string {
 export function seedApiKey(data: Record<string, unknown>): string {
   const id = (data.id as string) || `apikey_${Date.now()}`
   const keyHash = (data.keyHash as string) || createHash("sha256").update("sk_test_valid").digest("hex")
-  store.apiKeys.set(keyHash, {
-    id,
-    keyHash,
-    merchantId: data.merchantId as string,
-    createdAt: new Date(),
-  })
+  store.apiKeys.set(keyHash, { ...data, id, keyHash, merchantId: data.merchantId, createdAt: new Date() })
   return id
 }
 
@@ -122,6 +120,18 @@ export function seedRefund(data: Record<string, unknown>): string {
 export function seedStatement(data: Record<string, unknown>): string {
   const id = (data.id as string) || `stmt_${Date.now()}`
   store.statements.set(id, { id, ...data, createdAt: new Date() })
+  return id
+}
+
+export function seedPaymentIntent(data: Record<string, unknown>): string {
+  const id = (data.id as string) || `pi_${Date.now()}`
+  store.paymentIntents.set(id, { id, ...data, createdAt: new Date(), updatedAt: new Date() })
+  return id
+}
+
+export function seedAuditLog(data: Record<string, unknown>): string {
+  const id = `alog_${Date.now()}`
+  store.auditLogs.push({ id, ...data, createdAt: new Date() })
   return id
 }
 
@@ -261,7 +271,6 @@ export const database = {
       return data
     },
     findMany: async ({ where }: { where?: Record<string, unknown> }) => {
-      if (!store.refunds) return []
       const refunds = Array.from(store.refunds.values())
       if (!where) return refunds
       return refunds.filter((r: any) => {
@@ -284,10 +293,9 @@ export const database = {
     },
   },
   statement: {
-    findMany: async ({ where, take, skip }: { where?: Record<string, unknown>; take?: number; skip?: number }) => {
-      if (!store.statements) return []
-      let stmts = [...store.statements]
-      if (where) {
+    findMany: async ({ where, take, skip, orderBy }: { where?: Record<string, unknown>; take?: number; skip?: number; orderBy?: Record<string, string> }) => {
+      let stmts = Array.from(store.statements.values())
+      if (where && Object.keys(where).length > 0) {
         stmts = stmts.filter((s: any) => {
           for (const [k, v] of Object.entries(where)) {
             if (s[k] !== v) return false
@@ -295,14 +303,20 @@ export const database = {
           return true
         })
       }
+      if (orderBy?.createdAt) {
+        stmts.sort((a: any, b: any) => {
+          const aDate = a.createdAt?.getTime?.() ?? 0
+          const bDate = b.createdAt?.getTime?.() ?? 0
+          return orderBy.createdAt === "desc" ? bDate - aDate : aDate - bDate
+        })
+      }
       if (skip) stmts = stmts.slice(skip as number)
       if (take) stmts = stmts.slice(0, take as number)
       return stmts
     },
     count: async ({ where }: { where?: Record<string, unknown> }) => {
-      if (!store.statements) return 0
-      if (!where) return store.statements.length
-      return store.statements.filter((s: any) => {
+      if (!where) return store.statements.size
+      return Array.from(store.statements.values()).filter((s: any) => {
         for (const [k, v] of Object.entries(where)) {
           if (s[k] !== v) return false
         }
@@ -314,8 +328,15 @@ export const database = {
     findUnique: async ({ where }: { where: { id: string } }) => {
       return store.merchants.get(where.id) ?? null
     },
-    findMany: async () => {
-      return Array.from(store.merchants.values())
+    findMany: async ({ orderBy, include }: { orderBy?: Record<string, string>; include?: Record<string, boolean> }) => {
+      let merchants = Array.from(store.merchants.values())
+      if (orderBy?.name) {
+        merchants.sort((a: any, b: any) => orderBy.name === "asc" ? (a.name || "").localeCompare(b.name || "") : (b.name || "").localeCompare(a.name || ""))
+      }
+      if (include?.apiKeys) {
+        return merchants.map(m => ({ ...m, apiKeys: Array.from(store.apiKeys.values()).filter((k: any) => k.merchantId === m.id) }))
+      }
+      return merchants
     },
     count: async () => {
       return store.merchants.size
@@ -353,7 +374,6 @@ export const database = {
   },
   user: {
     findUnique: async ({ where }: { where: { email?: string; id?: string } }) => {
-      if (!store.users) store.users = new Map()
       for (const [, v] of store.users) {
         if (where.email && (v as any).email === where.email) return v
         if (where.id && (v as any).id === where.id) return v
@@ -361,31 +381,31 @@ export const database = {
       return null
     },
     create: async ({ data }: { data: Record<string, unknown> }) => {
-      if (!store.users) store.users = new Map()
-      ;store.users.set(data.id, { ...data, createdAt: new Date(), updatedAt: new Date() })
+      store.users.set(data.id as string, { ...data, createdAt: new Date(), updatedAt: new Date() })
       return data
     },
   },
   userMerchant: {
-    findMany: async ({ where }: { where?: { userId?: string; merchantId?: string } }) => {
-      if (!store.userMerchants) store.userMerchants = new Map()
-      return Array.from(store.userMerchants.values()).filter((um: any) => {
+    findMany: async ({ where, include }: { where?: { userId?: string; merchantId?: string }; include?: Record<string, boolean> }) => {
+      const ums = Array.from(store.userMerchants.values()).filter((um: any) => {
         if (where?.userId && um.userId !== where.userId) return false
         if (where?.merchantId && um.merchantId !== where.merchantId) return false
         return true
       })
+      if (include?.merchant) {
+        return ums.map(um => ({ ...um, merchant: store.merchants.get(um.merchantId as string) ?? null }))
+      }
+      return ums
     },
     create: async ({ data }: { data: Record<string, unknown> }) => {
-      if (!store.userMerchants) store.userMerchants = new Map()
       const id = `um_${Date.now()}_${Math.random()}`
-      ;store.userMerchants.set(id, { ...data, id, createdAt: new Date() })
+      store.userMerchants.set(id, { ...data, id, createdAt: new Date() })
       return data
     },
     deleteMany: async ({ where }: { where?: { userId?: string } }) => {
-      if (!store.userMerchants) return { count: 0 }
       let count = 0
       for (const [k, v] of store.userMerchants) {
-        if (where?.userId && v.userId === where.userId) { store.userMerchants.delete(k); count++ }
+        if (where?.userId && (v as any).userId === where.userId) { store.userMerchants.delete(k); count++ }
       }
       return { count }
     },
