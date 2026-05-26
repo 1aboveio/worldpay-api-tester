@@ -1,0 +1,5 @@
+{
+  "extends": "./packages/typescript-config/server.json",
+  "include": [],
+  "exclude": ["node_modules"]
+}
