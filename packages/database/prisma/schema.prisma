@@ -7,61 +7,6 @@ datasource db {
   provider = "postgresql"
 }
 
-// Better Auth managed models
-model User {
-  id            String    @id @default(cuid())
-  name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  sessions      Session[]
-  accounts      Account[]
-  userMerchants UserMerchant[]
-}
-
-model Session {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique
-  expiresAt DateTime
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model Account {
-  id                    String   @id @default(cuid())
-  userId                String
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accountId             String
-  providerId            String
-  accessToken           String?
-  refreshToken          String?
-  accessTokenExpiresAt  DateTime?
-  refreshTokenExpiresAt DateTime?
-  scope                 String?
-  idToken               String?
-  password              String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  @@unique([providerId, accountId])
-}
-
-model Verification {
-  id        String   @id @default(cuid())
-  identifier String
-  value     String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
 model Merchant {
   id             String           @id @default(cuid())
   name           String
@@ -72,9 +17,6 @@ model Merchant {
   apiKeys        ApiKey[]
   paymentMethods PaymentMethod[]
   paymentIntents PaymentIntent[]
-  userMerchants  UserMerchant[]
-  refunds        Refund[]
-  statements     Statement[]
 }
 
 model ApiKey {
@@ -147,48 +89,4 @@ model PaymentIntent {
   shipping         Json?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
-
-  refunds          Refund[]
-}
-
-model Refund {
-  id              String   @id @default(cuid())
-  merchantId      String
-  merchant        Merchant @relation(fields: [merchantId], references: [id])
-  paymentIntentId String
-  paymentIntent   PaymentIntent @relation(fields: [paymentIntentId], references: [id])
-  amount          Int
-  currency        String
-  status          String   @default("pending")
-  worldpayRefundId String?
-  reason          String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-}
-
-model Statement {
-  id              String   @id @default(cuid())
-  merchantId      String
-  merchant        Merchant @relation(fields: [merchantId], references: [id])
-  periodStart     DateTime
-  periodEnd       DateTime
-  totalVolume     Int      @default(0)
-  totalFees       Int      @default(0)
-  transactionCount Int     @default(0)
-  status          String   @default("draft")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-}
-
-model UserMerchant {
-  id         String   @id @default(cuid())
-  userId     String
-  merchantId String
-  role       String
-  createdAt  DateTime @default(now())
-
-  user     User     @relation(fields: [userId], references: [id])
-  merchant Merchant @relation(fields: [merchantId], references: [id])
-
-  @@unique([userId, merchantId])
 }

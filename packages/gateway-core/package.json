@@ -1,0 +1,16 @@
+{
+  "name": "@payfac/gateway-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@payfac/dal": "workspace:*",
+    "@payfac/worldpay-client": "workspace:*",
+    "@payfac/validators": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

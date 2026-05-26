@@ -1,20 +1,22 @@
-import { betterAuth } from "better-auth"
-import { prismaAdapter } from "@better-auth/prisma-adapter"
-import { database } from "@repo/database"
-import { headers as nextHeaders } from "next/headers"
+import { createHash } from "crypto"
 
-export const auth = betterAuth({
-  database: prismaAdapter(database, {
-    provider: "postgresql",
-  }),
-  emailAndPassword: {
-    enabled: true,
-  },
-  session: {
-    expiresIn: 60 * 60 * 24 * 7, // 7 days
-    updateAge: 60 * 60 * 24, // 1 day
-  },
-  trustedOrigins: [
-    process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-  ],
-})
+/**
+ * Hash an API key prefix (e.g. "sk_test_" or "sk_live_") with SHA-256
+ * for constant-time lookup in the ApiKey table.
+ */
+export function hashApiKey(key: string): string {
+  return createHash("sha256").update(key).digest("hex")
+}
+
+/**
+ * Extract the bearer token from an Authorization header.
+ * Returns null if missing or malformed.
+ */
+export function extractBearerToken(
+  authorizationHeader: string | null
+): string | null {
+  if (!authorizationHeader) return null
+  const match = authorizationHeader.match(/^Bearer\s+(.+)$/i)
+  if (!match?.[1]) return null
+  return match[1].trim()
+}
