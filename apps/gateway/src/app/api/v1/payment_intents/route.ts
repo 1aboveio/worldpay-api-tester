@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server"
 import {
   handleCreatePaymentIntent,
-  handleListPaymentIntents,
   type PaymentIntentServiceDeps,
 } from "@/lib/payment-intent-service"
 
@@ -40,16 +39,6 @@ function extractApiKey(request: NextRequest): string {
   const auth = request.headers.get("authorization")
   if (!auth?.startsWith("Bearer ")) return ""
   return auth.slice(7)
-}
-
-export async function GET(request: NextRequest) {
-  const apiKey = extractApiKey(request)
-  const url = new URL(request.url)
-  const query: Record<string, string> = {}
-  url.searchParams.forEach((value, key) => {
-    query[key] = value
-  })
-  return handleListPaymentIntents(query, apiKey, getDeps())
 }
 
 export async function POST(request: NextRequest) {

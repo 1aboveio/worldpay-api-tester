@@ -1,7 +1,6 @@
 export interface WpCallOptions {
   method?: string
   body?: unknown
-  queryParams?: Record<string, string>
 }
 
 /**

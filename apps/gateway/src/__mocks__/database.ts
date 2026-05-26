@@ -60,54 +60,6 @@ export const database = {
       const pm = pmId ? store.paymentMethods.get(pmId) ?? null : null
       return { ...withDates(pi), paymentMethod: pm }
     },
-    findMany: async (args: {
-      where: Record<string, unknown>
-      include?: Record<string, boolean>
-      orderBy?: Record<string, string>
-      take?: number
-    }) => {
-      let results = Array.from(store.paymentIntents.values())
-
-      // Filter by merchantId
-      if (args.where?.merchantId) {
-        results = results.filter((pi) => pi.merchantId === args.where.merchantId)
-      }
-
-      // Filter by createdAt >= gte
-      if (args.where?.createdAt && typeof args.where.createdAt === "object") {
-        const createdAtFilter = args.where.createdAt as { gte?: Date }
-        if (createdAtFilter.gte) {
-          results = results.filter(
-            (pi) => new Date(pi.createdAt as string) >= createdAtFilter.gte!,
-          )
-        }
-      }
-
-      // Sort by orderBy
-      if (args.orderBy?.createdAt === "desc") {
-        results.sort(
-          (a, b) =>
-            new Date(b.createdAt as string).getTime() -
-            new Date(a.createdAt as string).getTime(),
-        )
-      }
-
-      // Take
-      if (args.take) {
-        results = results.slice(0, args.take)
-      }
-
-      // Include paymentMethod
-      if (args.include?.paymentMethod) {
-        return results.map((pi) => {
-          const pmId = pi.paymentMethodId as string | undefined
-          const pm = pmId ? store.paymentMethods.get(pmId) ?? null : null
-          return { ...withDates(pi), paymentMethod: pm }
-        })
-      }
-
-      return results.map(withDates)
-    },
     update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
       const existing = store.paymentIntents.get(where.id) ?? {}
       const updated = withDates({ ...existing, ...data })

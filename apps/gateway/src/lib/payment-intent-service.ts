@@ -1,9 +1,8 @@
-import { createPaymentIntentSchema, listPaymentIntentsQuerySchema, type CreatePaymentIntentInput } from "./schemas"
+import { createPaymentIntentSchema, capturePaymentIntentSchema, type CreatePaymentIntentInput } from "./schemas"
 import type { WpCallFn, CreateTokenFn, ResolveMerchantFn } from "./worldpay-types"
 import {
   createPaymentIntent,
   getPaymentIntentByIdAndMerchant,
-  listPaymentIntents,
   updatePaymentIntentStatus,
   createPaymentMethod,
 } from "@repo/dal"
@@ -339,69 +338,6 @@ export async function handleCreatePaymentIntent(
   }
 }
 
-export async function handleListPaymentIntents(
-  query: Record<string, string>,
-  apiKey: string,
-  deps: Pick<PaymentIntentServiceDeps, "resolveMerchant">,
-) {
-  let merchant: Awaited<ReturnType<ResolveMerchantFn>>
-  try {
-    merchant = await deps.resolveMerchant(apiKey)
-  } catch {
-    return Response.json(
-      { error: { code: "authentication_error", message: "Invalid API key" } },
-      { status: 401 },
-    )
-  }
-
-  const parsed = listPaymentIntentsQuerySchema.safeParse(query)
-  if (!parsed.success) {
-    const firstIssue = parsed.error.issues[0]
-    return Response.json(
-      {
-        error: {
-          code: "validation_error",
-          message: firstIssue?.message ?? "Invalid query",
-          path: firstIssue?.path?.join("."),
-        },
-      },
-      { status: 400 },
-    )
-  }
-
-  const { limit, created_since } = parsed.data
-  const results = await listPaymentIntents(merchant.merchantId, {
-    limit,
-    createdSince: created_since ?? null,
-  })
-
-  const data = results.map((pi) => ({
-    id: pi.id,
-    object: "payment_intent",
-    amount: pi.amount,
-    currency: pi.currency,
-    status: pi.status,
-    capture_method: pi.captureMethod,
-    payment_method_details: {
-      type: "card",
-      card: maskCard(pi.paymentMethod?.brand ?? null, pi.paymentMethod?.last4 ?? null),
-    },
-    description: pi.description,
-    statement_descriptor: pi.statementDescriptor,
-    metadata: pi.metadata,
-    created: pi.createdAt instanceof Date ? pi.createdAt.toISOString() : new Date().toISOString(),
-  }))
-
-  return Response.json(
-    {
-      object: "list",
-      data,
-      has_more: results.length === limit,
-    },
-    { status: 200 },
-  )
-}
-
 export async function handleGetPaymentIntent(
   piId: string,
   apiKey: string,
@@ -434,25 +370,298 @@ export async function handleGetPaymentIntent(
       status: pi.status,
       capture_method: pi.captureMethod,
       payment_method_details: {
-        type: pi.paymentMethod?.type ?? "card",
-        card: {
-          brand: pi.paymentMethod?.brand ?? null,
-          last4: pi.paymentMethod?.last4 ?? null,
-          expiry_month: pi.paymentMethod?.expiryMonth ?? null,
-          expiry_year: pi.paymentMethod?.expiryYear ?? null,
-          funding: pi.paymentMethod?.funding ?? null,
-          country: pi.paymentMethod?.country ?? null,
-        },
+        type: "card",
+        card: maskCard(pi.paymentMethod?.brand ?? null, pi.paymentMethod?.last4 ?? null),
       },
-      three_d_secure: pi.threeDSStatus ? { status: pi.threeDSStatus } : null,
-      link_data: pi.linkData ?? null,
-      description: pi.description ?? null,
-      statement_descriptor: pi.statementDescriptor ?? null,
-      metadata: pi.metadata ?? null,
-      failure_code: pi.failureCode ?? null,
-      failure_message: pi.failureMessage ?? null,
+      description: pi.description,
+      statement_descriptor: pi.statementDescriptor,
+      metadata: pi.metadata,
       created: pi.createdAt instanceof Date ? pi.createdAt.toISOString() : new Date().toISOString(),
     },
     { status: 200 },
   )
+}
+
+export async function handleCapturePaymentIntent(
+  piId: string,
+  body: unknown,
+  apiKey: string,
+  idempotencyKey: string | null,
+  deps: Pick<PaymentIntentServiceDeps, "wpCall" | "resolveMerchant">,
+) {
+  // 1. Resolve merchant
+  let merchant: Awaited<ReturnType<ResolveMerchantFn>>
+  try {
+    merchant = await deps.resolveMerchant(apiKey)
+  } catch {
+    return Response.json(
+      { error: { code: "authentication_error", message: "Invalid API key" } },
+      { status: 401 },
+    )
+  }
+
+  // 2. Lookup PI
+  const pi = await getPaymentIntentByIdAndMerchant(piId, merchant.merchantId)
+  if (!pi) {
+    return Response.json(
+      { error: { code: "not_found", message: "Payment intent not found" } },
+      { status: 404 },
+    )
+  }
+
+  // 3. Idempotency check: if already succeeded with matching key, return current state
+  if (pi.status === PaymentIntentStatus.succeeded) {
+    if (idempotencyKey) {
+      return Response.json(
+        {
+          id: pi.id,
+          object: "payment_intent",
+          amount: pi.amount,
+          currency: pi.currency,
+          status: "succeeded",
+          capture_method: pi.captureMethod,
+          created: pi.createdAt instanceof Date ? pi.createdAt.toISOString() : new Date().toISOString(),
+        },
+        { status: 200 },
+      )
+    }
+    return Response.json(
+      { error: { code: "already_captured", message: "Payment intent has already been captured" } },
+      { status: 400 },
+    )
+  }
+
+  // 4. Validate status
+  if (pi.status !== PaymentIntentStatus.requires_capture) {
+    return Response.json(
+      { error: { code: "status_invalid", message: `Cannot capture payment intent with status: ${pi.status}` } },
+      { status: 400 },
+    )
+  }
+
+  // 5. Extract HATEOAS URLs from stored linkData
+  const linkData = pi.linkData as Record<string, { href?: string }> | null
+  if (!linkData) {
+    return Response.json(
+      { error: { code: "status_invalid", message: "No Worldpay links available for capture" } },
+      { status: 400 },
+    )
+  }
+
+  // 6. Validate capture input for partial capture
+  const parsed = capturePaymentIntentSchema.safeParse(body ?? {})
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0]
+    return Response.json(
+      {
+        error: {
+          code: "validation_error",
+          message: firstIssue?.message ?? "Invalid input",
+          path: firstIssue?.path?.join("."),
+        },
+      },
+      { status: 400 },
+    )
+  }
+
+  const amountToCapture = parsed.data.amount_to_capture
+  const isPartialCapture = amountToCapture !== undefined
+
+  // 7. Validate amount for partial capture
+  if (isPartialCapture) {
+    if (amountToCapture <= 0 || amountToCapture > pi.amount) {
+      return Response.json(
+        { error: { code: "capture_exceeded", message: "Capture amount exceeds authorized amount" } },
+        { status: 400 },
+      )
+    }
+  }
+
+  // 8. Determine which HATEOAS URL to use
+  const settleUrl = isPartialCapture
+    ? linkData["cardPayments:partialSettle"]?.href
+    : linkData["cardPayments:settle"]?.href
+
+  if (!settleUrl) {
+    return Response.json(
+      { error: { code: "status_invalid", message: `No ${isPartialCapture ? "partialSettle" : "settle"} link available` } },
+      { status: 400 },
+    )
+  }
+
+  // 9. Make Worldpay capture call
+  try {
+    const settleBody: Record<string, unknown> = isPartialCapture
+      ? { value: { amount: amountToCapture, currency: pi.currency } }
+      : {}
+
+    const settleResult = (await deps.wpCall(settleUrl, "payments-v7", {
+      body: settleBody,
+    })) as {
+      outcome?: string
+      refusal?: { code?: string; description?: string }
+      _links?: Record<string, unknown>
+    }
+
+    if (settleResult.outcome === "authorized" || settleResult.outcome === "sentForSettlement") {
+      await updatePaymentIntentStatus({
+        id: piId,
+        status: PaymentIntentStatus.succeeded,
+        linkData: (settleResult._links as Record<string, unknown>) ?? undefined,
+      })
+
+      return Response.json(
+        {
+          id: pi.id,
+          object: "payment_intent",
+          amount: pi.amount,
+          currency: pi.currency,
+          status: "succeeded",
+          capture_method: pi.captureMethod,
+          created: pi.createdAt instanceof Date ? pi.createdAt.toISOString() : new Date().toISOString(),
+        },
+        { status: 200 },
+      )
+    }
+
+    // Refused — don't update status, forward refusal
+    return Response.json(
+      {
+        id: pi.id,
+        object: "payment_intent",
+        amount: pi.amount,
+        currency: pi.currency,
+        status: pi.status,
+        failure_code: settleResult.refusal?.code ?? "refused",
+        failure_message: settleResult.refusal?.description ?? "Settlement refused",
+        capture_method: pi.captureMethod,
+        created: pi.createdAt instanceof Date ? pi.createdAt.toISOString() : new Date().toISOString(),
+      },
+      { status: 200 },
+    )
+  } catch {
+    return Response.json(
+      { error: { code: "processing_error", message: "Capture request failed" } },
+      { status: 502 },
+    )
+  }
+}
+
+export async function handleCancelPaymentIntent(
+  piId: string,
+  apiKey: string,
+  idempotencyKey: string | null,
+  deps: Pick<PaymentIntentServiceDeps, "wpCall" | "resolveMerchant">,
+) {
+  // 1. Resolve merchant
+  let merchant: Awaited<ReturnType<ResolveMerchantFn>>
+  try {
+    merchant = await deps.resolveMerchant(apiKey)
+  } catch {
+    return Response.json(
+      { error: { code: "authentication_error", message: "Invalid API key" } },
+      { status: 401 },
+    )
+  }
+
+  // 2. Lookup PI
+  const pi = await getPaymentIntentByIdAndMerchant(piId, merchant.merchantId)
+  if (!pi) {
+    return Response.json(
+      { error: { code: "not_found", message: "Payment intent not found" } },
+      { status: 404 },
+    )
+  }
+
+  // 3. Idempotency check: if already canceled with matching key, return current state
+  if (pi.status === PaymentIntentStatus.canceled) {
+    if (idempotencyKey) {
+      return Response.json(
+        {
+          id: pi.id,
+          object: "payment_intent",
+          amount: pi.amount,
+          currency: pi.currency,
+          status: "canceled",
+          capture_method: pi.captureMethod,
+          created: pi.createdAt instanceof Date ? pi.createdAt.toISOString() : new Date().toISOString(),
+        },
+        { status: 200 },
+      )
+    }
+    return Response.json(
+      { error: { code: "already_canceled", message: "Payment intent has already been canceled" } },
+      { status: 400 },
+    )
+  }
+
+  // 4. Validate status
+  if (pi.status !== PaymentIntentStatus.requires_capture) {
+    return Response.json(
+      { error: { code: "status_invalid", message: `Cannot cancel payment intent with status: ${pi.status}` } },
+      { status: 400 },
+    )
+  }
+
+  // 5. Extract cancel HATEOAS URL from stored linkData
+  const linkData = pi.linkData as Record<string, { href?: string }> | null
+  const cancelUrl = linkData?.["cardPayments:cancel"]?.href
+
+  if (!cancelUrl) {
+    return Response.json(
+      { error: { code: "status_invalid", message: "No Worldpay cancel link available" } },
+      { status: 400 },
+    )
+  }
+
+  // 6. Make Worldpay cancel call
+  try {
+    const cancelResult = (await deps.wpCall(cancelUrl, "payments-v7", {})) as {
+      outcome?: string
+      refusal?: { code?: string; description?: string }
+      _links?: Record<string, unknown>
+    }
+
+    if (cancelResult.outcome === "canceled" || cancelResult.outcome === "authorized") {
+      await updatePaymentIntentStatus({
+        id: piId,
+        status: PaymentIntentStatus.canceled,
+        linkData: (cancelResult._links as Record<string, unknown>) ?? undefined,
+      })
+
+      return Response.json(
+        {
+          id: pi.id,
+          object: "payment_intent",
+          amount: pi.amount,
+          currency: pi.currency,
+          status: "canceled",
+          capture_method: pi.captureMethod,
+          created: pi.createdAt instanceof Date ? pi.createdAt.toISOString() : new Date().toISOString(),
+        },
+        { status: 200 },
+      )
+    }
+
+    // Refused — don't update status, forward refusal
+    return Response.json(
+      {
+        id: pi.id,
+        object: "payment_intent",
+        amount: pi.amount,
+        currency: pi.currency,
+        status: pi.status,
+        failure_code: cancelResult.refusal?.code ?? "refused",
+        failure_message: cancelResult.refusal?.description ?? "Cancel refused",
+        capture_method: pi.captureMethod,
+        created: pi.createdAt instanceof Date ? pi.createdAt.toISOString() : new Date().toISOString(),
+      },
+      { status: 200 },
+    )
+  } catch {
+    return Response.json(
+      { error: { code: "processing_error", message: "Cancel request failed" } },
+      { status: 502 },
+    )
+  }
 }

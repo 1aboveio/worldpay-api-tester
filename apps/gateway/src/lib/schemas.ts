@@ -52,60 +52,8 @@ export const createPaymentIntentSchema = z.object({
 
 export type CreatePaymentIntentInput = z.infer<typeof createPaymentIntentSchema>
 
-// ─── List Payment Intents Query ────────────────────────────────────
-
-export const listPaymentIntentsQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).optional().default(10),
-  created_since: z.string().datetime({ message: "created_since must be ISO 8601" }).optional(),
+export const capturePaymentIntentSchema = z.object({
+  amount_to_capture: z.number().int().optional(),
 })
 
-export type ListPaymentIntentsQuery = z.infer<typeof listPaymentIntentsQuerySchema>
-
-// ─── Statements Query ───────────────────────────────────────────
-
-export const statementsQuerySchema = z.object({
-  from: z.string().min(1, "from date is required"),
-  to: z.string().min(1, "to date is required"),
-  page: z.coerce.number().int().min(1).optional().default(1),
-}).superRefine((data, ctx) => {
-  const fromDate = new Date(data.from)
-  const toDate = new Date(data.to)
-
-  if (isNaN(fromDate.getTime())) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "from must be a valid ISO 8601 date",
-      path: ["from"],
-    })
-  }
-
-  if (isNaN(toDate.getTime())) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "to must be a valid ISO 8601 date",
-      path: ["to"],
-    })
-    return
-  }
-
-  const diffMs = toDate.getTime() - fromDate.getTime()
-  const diffDays = diffMs / (1000 * 60 * 60 * 24)
-
-  if (diffDays < 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "to must be after from",
-      path: ["to"],
-    })
-  }
-
-  if (diffDays > 31) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Date range must not exceed 31 days",
-      path: ["to"],
-    })
-  }
-})
-
-export type StatementsQuery = z.infer<typeof statementsQuerySchema>
+export type CapturePaymentIntentInput = z.infer<typeof capturePaymentIntentSchema>
