@@ -1,5 +1,6 @@
 import { getSession } from "@/lib/auth-server"
 import { listPaymentIntents, listMerchants } from "@/dal/portal"
+import { PaymentFilters } from "./payment-filters"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 
@@ -53,47 +54,12 @@ export default async function PaymentsPage({
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
-        {isPlatformView && (
-          <select
-            name="merchant"
-            defaultValue={params.merchant ?? ""}
-            onChange={(e) => {
-              const url = new URL(window.location.href)
-              if (e.target.value) url.searchParams.set("merchant", e.target.value)
-              else url.searchParams.delete("merchant")
-              url.searchParams.delete("page")
-              window.location.href = url.toString()
-            }}
-            className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="">All Merchants</option>
-            {merchants.map((m: Record<string, unknown>) => (
-              <option key={m.id as string} value={m.id as string}>
-                {m.name as string}
-              </option>
-            ))}
-          </select>
-        )}
-        <select
-          name="status"
-          defaultValue={params.status ?? ""}
-          onChange={(e) => {
-            const url = new URL(window.location.href)
-            if (e.target.value) url.searchParams.set("status", e.target.value)
-            else url.searchParams.delete("status")
-            url.searchParams.delete("page")
-            window.location.href = url.toString()
-          }}
-          className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          <option value="">All Statuses</option>
-          <option value="succeeded">Succeeded</option>
-          <option value="payment_failed">Failed</option>
-          <option value="requires_capture">Requires Capture</option>
-          <option value="processing">Processing</option>
-        </select>
-      </div>
+      <PaymentFilters
+        isPlatformView={isPlatformView}
+        merchants={merchants}
+        currentMerchant={params.merchant}
+        currentStatus={params.status}
+      />
 
       {items.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-lg border py-12">

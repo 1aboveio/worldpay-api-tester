@@ -96,23 +96,28 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    const wpResponse = await worldpayRequest({
-      method: "POST",
-      path: "/tokens",
-      mediaType: TOKENS_MEDIA_TYPE,
-      body: wpRequestBody,
-    });
+    let wpBody: Record<string, unknown>;
+    try {
+      wpBody = await worldpayRequest("/tokens", {
+        method: "POST",
+        mediaType: TOKENS_MEDIA_TYPE,
+        body: wpRequestBody,
+      });
+    } catch (wpErr: any) {
+      // WorldpayError carries status and body
+      const status: number = wpErr?.status ?? 500;
+      wpBody = (wpErr?.body as Record<string, unknown>) ?? {};
 
-    const wpBody = await wpResponse.json();
+      const wpMessage: string =
+        (wpBody?.message as string) ??
+        (wpBody?.error && (wpBody.error as any).message as string) ??
+        "Tokenization failed";
 
-    // --- Handle Worldpay errors ---
-    if (!wpResponse.ok) {
-      const wpMessage: string = wpBody?.message ?? wpBody?.error?.message ?? "Tokenization failed";
-
-      // Match against Worldpay error response structure (errorName / errorCode),
-      // not by substring-matching the message text.
       const wpErrorName: string | undefined =
-        wpBody?.errorName ?? wpBody?.error?.errorName ?? wpBody?.errorCode ?? wpBody?.error?.errorCode;
+        (wpBody?.errorName as string) ??
+        (wpBody?.error && (wpBody.error as any).errorName as string) ??
+        (wpBody?.errorCode as string) ??
+        (wpBody?.error && (wpBody.error as any).errorCode as string);
 
       if (wpErrorName === "cardNumberInvalid" || wpErrorName === "invalidCardNumber") {
         return NextResponse.json(
@@ -128,10 +133,11 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 409: duplicate token — handle gracefully
-      if (wpResponse.status === 409) {
+      if (status === 409) {
         const existingTokenHref: string =
-          wpBody?.tokenHref ?? wpBody?._links?.self?.href ?? "";
+          (wpBody?.tokenHref as string) ??
+          (wpBody?._links && (wpBody._links as any).self?.href as string) ??
+          "";
         if (existingTokenHref) {
           const ik = computeIdempotencyKey(existingTokenHref);
           const existing = await getPaymentMethodByIdempotencyKey(merchantId, ik);
