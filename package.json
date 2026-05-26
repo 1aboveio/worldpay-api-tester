@@ -1,27 +1,22 @@
 {
   "name": "worldpay-api-tester",
-  "version": "1.0.0",
   "private": true,
-  "description": "PayFac Payment Gateway MVP — Turborepo monorepo",
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
     "lint": "turbo lint",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "db:generate": "prisma generate --schema=packages/dal/prisma/schema.prisma",
-    "db:push": "prisma db push --schema=packages/dal/prisma/schema.prisma",
-    "format": "prettier --write ."
+    "db:generate": "turbo db:generate",
+    "db:push": "turbo db:push",
+    "test": "turbo test --filter=@apps/gateway",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\""
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "prettier": "^3.3.0",
+    "prettier": "^3.2.0",
     "turbo": "^2.3.0",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "typescript": "^5.6.0"
   },
   "packageManager": "pnpm@9.15.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.0"
   }
 }

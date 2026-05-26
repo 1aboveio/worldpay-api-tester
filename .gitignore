@@ -1,5 +1,9 @@
 node_modules/
 dist/
+.next/
 .env
 *.log
-packages/dal/src/generated/
+.turbo
+.next
+packages/database/generated/
+packages/database/prisma/migrations/

@@ -3,15 +3,25 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**"]
-    },
-    "test": {
-      "dependsOn": ["build"]
+      "outputs": [".next/**", "dist/**"]
     },
     "dev": {
+      "dependsOn": ["^db:generate"],
       "cache": false,
       "persistent": true
     },
-    "lint": {}
+    "db:generate": {
+      "inputs": ["prisma/schema.prisma"]
+    },
+    "db:push": {
+      "dependsOn": ["db:generate"]
+    },
+    "test": {
+      "dependsOn": ["^db:generate"],
+      "outputs": []
+    },
+    "lint": {
+      "dependsOn": ["^db:generate"]
+    }
   }
 }
