@@ -11,7 +11,8 @@ import type { PaymentIntentResponse } from "@payfac/validators";
 // ── Config ─────────────────────────────────────────────────
 
 export interface GatewayConfig {
-  gatewayBaseUrl: string; // e.g., "https://gateway.payfac.com"
+  gatewayBaseUrl: string;
+  skipDdcInit?: boolean; // e.g., "https://gateway.payfac.com"
 }
 
 // ── 3DS Orchestration result ──────────────────────────────
@@ -20,7 +21,7 @@ export type ThreeDSOrchestrationResult =
   | {
       type: "continue_to_authorize";
       threeDS?: ThreeDSInjection;
-      threeDSStatus: "authenticated" | "not_enrolled" | "unavailable";
+      threeDSStatus: "authenticated" | "not_enrolled" | "unavailable" | "not_requested";
     }
   | {
       type: "requires_device_data";
@@ -54,6 +55,7 @@ export async function runThreeDSFlow(params: {
   merchantReturnUrl?: string;
   challengePreference?: string;
   gatewayBaseUrl: string;
+  skipDdcInit?: boolean;
 }): Promise<ThreeDSOrchestrationResult> {
   const {
     worldpayClient,
@@ -70,15 +72,19 @@ export async function runThreeDSFlow(params: {
     gatewayBaseUrl,
   } = params;
 
-  // Step 1: DDC Init
-  const ddcResponse = await initDDC({
-    worldpayClient,
-    worldpayEntity,
-    tokenHref,
-    paymentIntentId,
-  });
-  const { url: ddcUrl, jwt: ddcJwt } =
-    ddcResponse.deviceDataCollection;
+  // Step 1: DDC Init (skip if already initialized)
+  let ddcUrl = "";
+  let ddcJwt = "";
+  if (!params.skipDdcInit) {
+    const ddcResponse = await initDDC({
+      worldpayClient,
+      worldpayEntity,
+      tokenHref,
+      paymentIntentId,
+    });
+    ddcUrl = ddcResponse.deviceDataCollection.url;
+    ddcJwt = ddcResponse.deviceDataCollection.jwt;
+  }
 
   // Store merchant return URL on PaymentIntent if provided
   if (merchantReturnUrl) {
@@ -172,7 +178,7 @@ export async function authorizeWithThreeDS(params: {
   amount: number;
   currency: string;
   threeDS?: ThreeDSInjection;
-  threeDSStatus: "authenticated" | "not_enrolled" | "unavailable";
+  threeDSStatus: "authenticated" | "not_enrolled" | "unavailable" | "not_requested";
   payfacSchemeId?: string;
   subMerchantRef?: string;
   subMerchantName?: string;
@@ -274,8 +280,8 @@ export async function authorizeWithThreeDS(params: {
       worldpayPaymentId: citResponse.paymentId,
       schemeReference: citResponse.scheme?.reference,
       issuerAuthCode: citResponse.issuer?.authorizationCode,
-      threeDSStatus,
-      ...(threeDS && {
+      ...(threeDSStatus !== "not_requested" && { threeDSStatus }),
+      ...(threeDS && threeDSStatus !== "not_requested" && {
         threeDSVersion: threeDS.version,
         threeDSEci: threeDS.eci,
         threeDSAuthValue: threeDS.authenticationValue,
@@ -326,6 +332,7 @@ export async function handleChallengeCallback(params: {
   amount: number;
   currency: string;
   gatewayBaseUrl: string;
+  skipDdcInit?: boolean;
   payfacSchemeId?: string;
   subMerchantRef?: string;
   subMerchantName?: string;
@@ -335,6 +342,8 @@ export async function handleChallengeCallback(params: {
   subMerchantCountry?: string;
   statementDescriptor?: string;
   riskProfileHref?: string;
+  captureMethod?: string;
+  setupFutureUsage?: string;
 }): Promise<{
   redirectUrl: string;
 }> {
@@ -355,6 +364,8 @@ export async function handleChallengeCallback(params: {
     subMerchantCountry,
     statementDescriptor,
     riskProfileHref,
+    captureMethod,
+    setupFutureUsage,
   } = params;
 
   // Step 1: Verify
@@ -395,6 +406,8 @@ export async function handleChallengeCallback(params: {
     subMerchantCountry,
     statementDescriptor,
     riskProfileHref,
+    captureMethod,
+    setupFutureUsage,
   });
 
   // Step 3: Get merchant return URL for redirect

@@ -24,7 +24,7 @@ export async function POST(
       );
     }
 
-    const { collection_reference } = parsed.data;
+    const { collection_reference, accept_header, user_agent } = parsed.data;
 
     // Look up PaymentIntent
     const pi = await findPaymentIntentWithMerchant(paymentIntentId);
@@ -61,6 +61,9 @@ export async function POST(
       merchantReturnUrl: pi.merchantReturnUrl ?? undefined,
       challengePreference: pi.challengePreference ?? undefined,
       gatewayBaseUrl: process.env.GATEWAY_BASE_URL ?? "https://gateway.payfac.com",
+      skipDdcInit: true,
+      acceptHeader: accept_header,
+      userAgentHeader: user_agent,
     });
 
     switch (threeDSResult.type) {

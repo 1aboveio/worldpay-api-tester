@@ -82,6 +82,8 @@ export type CreatePaymentIntentInput = z.infer<
 
 export const deviceDataSubmitSchema = z.object({
   collection_reference: z.string().min(1, "collection_reference is required"),
+  accept_header: z.string().optional(),
+  user_agent: z.string().optional(),
 });
 
 export type DeviceDataSubmitInput = z.infer<typeof deviceDataSubmitSchema>;

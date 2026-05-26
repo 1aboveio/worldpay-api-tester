@@ -89,6 +89,30 @@ describe("POST /api/v1/payment_intents/{id}/device_data", () => {
     });
   });
 
+
+  it("should NOT call DDC Init when skipDdcInit is true", async () => {
+    const wpClient = createMockWorldpayClient();
+
+    const result = await runThreeDSFlow({
+      worldpayClient: wpClient,
+      paymentIntentId: "pi_test456",
+      worldpayEntity: "test_entity",
+      tokenHref: "https://try.access.worldpay.com/tokens/eyJr...",
+      amount: 250,
+      currency: "GBP",
+      collectionReference: "0_4XYZ12345",
+      gatewayBaseUrl: "https://gateway.payfac.com",
+      skipDdcInit: true,
+    });
+
+    expect(result.type).toBe("continue_to_authorize");
+
+    // Verify DDC Init was NOT called
+    expect(wpClient.threeDSInit).not.toHaveBeenCalled();
+
+    // But Authenticate WAS called
+    expect(wpClient.threeDSAuthenticate).toHaveBeenCalledOnce();
+  });
   it("device_data with challenged outcome returns requires_action", async () => {
     const wpClient = createMockWorldpayClient();
     mockChallenged(wpClient);

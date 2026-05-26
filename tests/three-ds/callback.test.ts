@@ -136,6 +136,32 @@ describe("GET /api/v1/3ds/callback", () => {
     );
   });
 
+
+  it("should pass captureMethod and setupFutureUsage to authorize", async () => {
+    const wpClient = createMockWorldpayClient();
+
+    await handleChallengeCallback({
+      worldpayClient: wpClient,
+      paymentIntentId: "pi_callback",
+      sessionId: "3ds_sess_callback1",
+      worldpayEntity: "test_entity",
+      tokenHref: "https://try.access.worldpay.com/tokens/eyJr...",
+      amount: 250,
+      currency: "GBP",
+      gatewayBaseUrl: "https://gateway.payfac.com",
+      captureMethod: "manual",
+      setupFutureUsage: "off_session",
+    });
+
+    const citCall = (wpClient as ReturnType<typeof createMockWorldpayClient>)._calls
+      .citAuthorize[0] as Record<string, unknown>;
+    const instruction = citCall.instruction as Record<string, unknown>;
+    expect(instruction.requestAutoSettlement).toEqual({ enabled: false });
+    expect(instruction.customerAgreement).toEqual({
+      type: "cardOnFile",
+      storedCardUsage: "first",
+    });
+  });
   it("should inject 3DS auth from verify into CIT authorize", async () => {
     const wpClient = createMockWorldpayClient();
 
@@ -163,6 +189,82 @@ describe("GET /api/v1/3ds/callback", () => {
     });
   });
 
+
+  it("should redirect with failed when session is expired", async () => {
+    const wpClient = createMockWorldpayClient();
+
+    // Mock an expired session (16 min old)
+    const expiredDate = new Date(Date.now() - 16 * 60 * 1000);
+    const expiredSession = {
+      id: "3ds_sess_callback1",
+      paymentIntentId: "pi_callback",
+      challengeReference: "challenge-ref-abc",
+      merchantReturnUrl: "https://myshop.com/checkout/complete",
+      ddcJwt: "mock-ddc-jwt",
+      ddcUrl: "https://secure.worldpay.com/rp/api/ddc.html",
+      collectionReference: "0_4ABCDEFG",
+      status: "challenged",
+      createdAt: expiredDate,
+      updatedAt: expiredDate,
+    };
+    const { prisma } = await import("@payfac/dal");
+    // @ts-expect-error - mock
+    prisma.threeDSSession.findUnique = vi.fn().mockResolvedValue(expiredSession);
+
+    const result = await handleChallengeCallback({
+      worldpayClient: wpClient,
+      paymentIntentId: "pi_callback",
+      sessionId: "3ds_sess_callback1",
+      worldpayEntity: "test_entity",
+      tokenHref: "https://try.access.worldpay.com/tokens/eyJr...",
+      amount: 250,
+      currency: "GBP",
+      gatewayBaseUrl: "https://gateway.payfac.com",
+    });
+
+    // Should fail without calling verify (expired before API call)
+    expect(wpClient.threeDSVerify).not.toHaveBeenCalled();
+    expect(result.redirectUrl).toBe(
+      "https://myshop.com/checkout/complete?status=failed"
+    );
+  });
+
+  it("should reject replay on already-completed session", async () => {
+    const wpClient = createMockWorldpayClient();
+
+    const completedSession = {
+      id: "3ds_sess_callback1",
+      paymentIntentId: "pi_callback",
+      challengeReference: "challenge-ref-abc",
+      merchantReturnUrl: "https://myshop.com/checkout/complete",
+      ddcJwt: "mock-ddc-jwt",
+      ddcUrl: "https://secure.worldpay.com/rp/api/ddc.html",
+      collectionReference: "0_4ABCDEFG",
+      status: "completed",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const { prisma } = await import("@payfac/dal");
+    // @ts-expect-error - mock
+    prisma.threeDSSession.findUnique = vi.fn().mockResolvedValue(completedSession);
+
+    const result = await handleChallengeCallback({
+      worldpayClient: wpClient,
+      paymentIntentId: "pi_callback",
+      sessionId: "3ds_sess_callback1",
+      worldpayEntity: "test_entity",
+      tokenHref: "https://try.access.worldpay.com/tokens/eyJr...",
+      amount: 250,
+      currency: "GBP",
+      gatewayBaseUrl: "https://gateway.payfac.com",
+    });
+
+    // Should fail without calling verify
+    expect(wpClient.threeDSVerify).not.toHaveBeenCalled();
+    expect(result.redirectUrl).toBe(
+      "https://myshop.com/checkout/complete?status=failed"
+    );
+  });
   it("should redirect with failed when verification fails", async () => {
     const wpClient = createMockWorldpayClient();
     mockVerifyFailed(wpClient);

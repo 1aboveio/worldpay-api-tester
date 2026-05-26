@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
         tokenHref: `https://try.access.worldpay.com/tokens/placeholder`, // would come from tokenize step in real flow
         amount: input.amount,
         currency: input.currency.toUpperCase(),
-        threeDSStatus: "authenticated", // not_requested in real flow
+        threeDSStatus: "not_requested",
         payfacSchemeId: merchant.payfacSchemeId ?? undefined,
         subMerchantRef: merchant.subMerchantRef ?? undefined,
         subMerchantName: merchant.subMerchantName ?? undefined,
@@ -81,10 +81,6 @@ export async function POST(request: NextRequest) {
         setupFutureUsage: input.setup_future_usage,
       });
 
-      // Override threeDS status for disabled path
-      await updatePaymentIntentStatus(paymentIntent.id, result.status, {
-        threeDSStatus: "not_requested",
-      });
 
       return NextResponse.json(
         {

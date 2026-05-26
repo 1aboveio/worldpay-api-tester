@@ -214,6 +214,26 @@ describe("Zod validators", () => {
       expect(result.success).toBe(false);
     });
 
+
+    it("should parse accept_header and user_agent", () => {
+      const result = deviceDataSubmitSchema.safeParse({
+        collection_reference: "0_4XYZ12345",
+        accept_header: "text/html,application/xhtml+xml",
+        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.accept_header).toBe("text/html,application/xhtml+xml");
+        expect(result.data.user_agent).toBe("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+      }
+    });
+
+    it("should parse without optional headers (backward compat)", () => {
+      const result = deviceDataSubmitSchema.safeParse({
+        collection_reference: "0_4XYZ12345",
+      });
+      expect(result.success).toBe(true);
+    });
     it("should reject missing collection_reference", () => {
       const result = deviceDataSubmitSchema.safeParse({});
       expect(result.success).toBe(false);

@@ -53,6 +53,8 @@ export async function GET(request: NextRequest) {
       statementDescriptor:
         pi.statementDescriptor ?? pi.description ?? undefined,
       riskProfileHref: pi.riskProfileHref ?? undefined,
+      captureMethod: pi.captureMethod,
+      setupFutureUsage: pi.setupFutureUsage ?? undefined,
     });
 
     // 302 redirect to merchant return URL

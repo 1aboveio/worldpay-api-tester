@@ -34,16 +34,33 @@ export async function verify3DS(
     };
   }
 
+  // Replay protection: only process sessions in challenged state
+  if (session.status === "completed") {
+    return {
+      outcome: "failed",
+      error: "Session already completed — replay rejected",
+    };
+  }
+
+  // Session expiry: 15-minute TTL from creation
+  const TTL_MS = 15 * 60 * 1000;
+  if (Date.now() - session.createdAt.getTime() > TTL_MS) {
+    return {
+      outcome: "failed",
+      error: "Session expired",
+    };
+  }
+
   const response: ThreeDSVerifyResponse = await worldpayClient.threeDSVerify({
     transactionReference: `verify-${sessionId}`,
     merchant: { entity: worldpayEntity },
     challenge: { reference: session.challengeReference },
   });
 
-  // Update session status
+  // Update session status — mark as completed to prevent replay
   await prisma.threeDSSession.update({
     where: { id: sessionId },
-    data: { status: response.outcome },
+    data: { status: "completed" },
   });
 
   if (
