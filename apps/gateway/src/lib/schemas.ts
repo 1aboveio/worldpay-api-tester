@@ -52,10 +52,8 @@ export const createPaymentIntentSchema = z.object({
 
 export type CreatePaymentIntentInput = z.infer<typeof createPaymentIntentSchema>
 
-export const createRefundSchema = z.object({
-  payment_intent: z.string().min(1),
-  amount: z.number().int().min(1).optional(),
-  reason: z.enum(["duplicate", "fraudulent", "requested_by_customer"]).optional(),
+export const capturePaymentIntentSchema = z.object({
+  amount_to_capture: z.number().int().optional(),
 })
 
-export type CreateRefundInput = z.infer<typeof createRefundSchema>
+export type CapturePaymentIntentInput = z.infer<typeof capturePaymentIntentSchema>

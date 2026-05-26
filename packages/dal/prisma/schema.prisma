@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Merchant {
+  id              String           @id @default(uuid())
+  name            String
+  apiKey          String           @unique
+  worldpayEntity  String
+  payfacSchemeId  String?
+  subMerchantRef  String?
+  subMerchantName String?
+  subMerchantStreet   String?
+  subMerchantPostal   String?
+  subMerchantCity     String?
+  subMerchantCountry  String?
+  fraudsightEnabled   Boolean        @default(false)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  paymentIntents  PaymentIntent[]
+  threeDSSessions ThreeDSSession[]
+}
+
+model PaymentIntent {
+  id                    String    @id @default(uuid())
+  merchantId            String
+  amount                Int
+  currency              String
+  status                String    @default("created") // created, processing, requires_device_data, requires_action, requires_capture, succeeded, canceled, payment_failed
+  captureMethod         String    @default("automatic") // automatic, manual
+  description           String?
+  statementDescriptor   String?
+  setupFutureUsage      String?   // off_session
+  confirm               Boolean   @default(true)
+  failureCode           String?
+  failureMessage        String?
+  worldpayPaymentId     String?
+  schemeReference       String?
+  issuerAuthCode        String?
+  riskProfileHref       String?
+  idempotencyKey        String?
+
+  // 3DS fields
+  threeDSStatus        String?   // authenticated, not_enrolled, unavailable, failed, not_requested
+  threeDSVersion       String?
+  threeDSEci           String?
+  threeDSAuthValue     String?
+  threeDSTransactionId String?
+
+  // Token fields
+  tokenHref            String?
+
+  // Card summary
+  cardBrand     String?
+  cardLast4     String?
+  cardExpiryMonth Int?
+  cardExpiryYear  Int?
+  cardFunding   String?
+  cardCountry   String?
+
+  challengePreference String?   // noPreference, noChallengeRequested, challengeRequested, challengeMandated
+  merchantReturnUrl   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  merchant        Merchant         @relation(fields: [merchantId], references: [id])
+  paymentMethod   PaymentMethod?
+  threeDSSessions ThreeDSSession[]
+}
+
+model PaymentMethod {
+  id             String         @id @default(uuid())
+  merchantId     String
+  type           String         // card, card_token
+  tokenHref      String         @unique
+  cardBrand      String?
+  cardLast4      String?
+  cardExpiryMonth Int?
+  cardExpiryYear  Int?
+  cardFunding    String?
+  cardCountry    String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  paymentIntents PaymentIntent[]
+}
+
+model ThreeDSSession {
+  id                  String   @id @default(uuid())
+  paymentIntentId     String
+  challengeReference  String?
+  merchantReturnUrl   String?
+  ddcJwt              String?
+  ddcUrl              String?
+  collectionReference String?
+  status              String   @default("initialized") // initialized, ddc_complete, authenticating, challenged, authenticated, failed
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  paymentIntent PaymentIntent @relation(fields: [paymentIntentId], references: [id])
+}
