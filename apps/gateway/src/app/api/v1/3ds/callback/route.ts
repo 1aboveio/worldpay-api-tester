@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleChallengeCallback } from "@payfac/gateway-core";
-import { findPaymentIntentWithMerchant } from "@payfac/dal";
+import { findPaymentIntentWithMerchant } from "@repo/dal";
 import { getWorldpayClient } from "@/lib/worldpay";
 
 export async function GET(request: NextRequest) {

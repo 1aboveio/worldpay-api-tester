@@ -6,7 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "dependencies": {
-    "@payfac/dal": "workspace:*",
+    "@repo/dal": "workspace:*",
     "@payfac/worldpay-client": "workspace:*",
     "@payfac/validators": "workspace:*"
   },

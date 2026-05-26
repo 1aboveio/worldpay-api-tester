@@ -77,7 +77,50 @@ importers:
         specifier: ^7.0.0
         version: 7.8.0(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@5.9.3)
 
+  packages/eslint-config: {}
+
+  packages/gateway-core:
+    dependencies:
+      '@payfac/validators':
+        specifier: workspace:*
+        version: link:../validators
+      '@payfac/worldpay-client':
+        specifier: workspace:*
+        version: link:../worldpay-client
+      '@repo/dal':
+        specifier: workspace:*
+        version: link:../dal
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
   packages/typescript-config: {}
+
+  packages/ui:
+    dependencies:
+      tailwindcss:
+        specifier: ^4.0.0
+        version: 4.3.0
+      tailwindcss-animate:
+        specifier: ^1.0.7
+        version: 1.0.7(tailwindcss@4.3.0)
+
+  packages/validators:
+    dependencies:
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
+  packages/worldpay-client:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
 
 packages:
 
@@ -1312,6 +1355,14 @@ packages:
       babel-plugin-macros:
         optional: true
 
+  tailwindcss-animate@1.0.7:
+    resolution: {integrity: sha512-bl6mpH3T7I3UFxuvDEXLxy/VuFxBk5bbzplh7tXI68mwMokNYd1t9qPBHlnyTwfa4JGC4zP516I1hYYtQ/vspA==}
+    peerDependencies:
+      tailwindcss: '>=3.0.0 || insiders'
+
+  tailwindcss@4.3.0:
+    resolution: {integrity: sha512-y6nxMGB1nMW9R6k96e5gdIFzcfL/gTJRNaqGes1YvkLnPVXzWgbqFF2yLC0T8G774n24cx3Pe8XrKoniCOAH+Q==}
+
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
 
@@ -2466,6 +2517,12 @@ snapshots:
     dependencies:
       client-only: 0.0.1
       react: 19.2.6
+
+  tailwindcss-animate@1.0.7(tailwindcss@4.3.0):
+    dependencies:
+      tailwindcss: 4.3.0
+
+  tailwindcss@4.3.0: {}
 
   tinybench@2.9.0: {}
 

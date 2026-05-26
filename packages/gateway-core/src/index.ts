@@ -1,11 +1,11 @@
 import type { IWorldpayClient, ThreeDSInjection } from "@payfac/worldpay-client";
-import { initDDC, authenticate3DS, verify3DS, ThreeDSSessionManager } from "@payfac/dal";
+import { initDDC, authenticate3DS, verify3DS, ThreeDSSessionManager } from "@repo/dal";
 import {
   findPaymentIntentWithMerchant,
   storePaymentResult,
   storeThreeDSResult,
   updatePaymentIntentStatus,
-} from "@payfac/dal";
+} from "@repo/dal";
 import type { PaymentIntentResponse } from "@payfac/validators";
 
 // ── Config ─────────────────────────────────────────────────

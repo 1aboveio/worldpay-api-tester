@@ -4,7 +4,7 @@ import {
   runThreeDSFlow,
   authorizeWithThreeDS,
 } from "@payfac/gateway-core";
-import { findPaymentIntentWithMerchant, updatePaymentIntentStatus } from "@payfac/dal";
+import { findPaymentIntentWithMerchant, updatePaymentIntentStatus } from "@repo/dal";
 import { getWorldpayClient } from "@/lib/worldpay";
 
 export async function POST(
