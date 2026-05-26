@@ -127,6 +127,28 @@ export const database = {
       store.paymentIntents.set(where.id, updated)
       return updated
     },
+    /**
+     * Atomically increment totalRefunded on a PaymentIntent.
+     * Only succeeds if totalRefunded + amount <= original amount.
+     * Returns { totalRefunded: newTotal } or null if the check fails.
+     */
+    atomicIncrementTotalRefunded: async ({
+      id,
+      amount,
+    }: {
+      id: string
+      amount: number
+    }): Promise<{ totalRefunded: number } | null> => {
+      const pi = store.paymentIntents.get(id)
+      if (!pi) return null
+      const current = (pi.totalRefunded as number) ?? 0
+      const originalAmount = pi.amount as number
+      if (current + amount > originalAmount) return null
+      const newTotal = current + amount
+      const updated = { ...pi, totalRefunded: newTotal, updatedAt: new Date() }
+      store.paymentIntents.set(id, updated)
+      return { totalRefunded: newTotal }
+    },
   },
   paymentMethod: {
     create: async ({ data }: { data: Record<string, unknown> }) => {

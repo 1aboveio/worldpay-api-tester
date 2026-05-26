@@ -89,8 +89,9 @@ function seedSucceededPi(overrides?: {
     customerIpAddress: null,
     shipping: null,
     idempotencyKey: null,
-    linkData: overrides?.linkData ?? makeRefundHateoasLinks(),
+    linkData: overrides && "linkData" in overrides ? overrides.linkData : makeRefundHateoasLinks(),
     threeDSStatus: null,
+    totalRefunded: 0,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
   })
@@ -120,6 +121,7 @@ function seedNonSucceededPi() {
     idempotencyKey: null,
     linkData: makeRefundHateoasLinks(),
     threeDSStatus: null,
+    totalRefunded: 0,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
   })
@@ -517,6 +519,38 @@ describe("POST /api/v1/refunds", () => {
       // Verify only one refund stored
       const refundCount = getMockStore().refunds?.size ?? 0
       expect(refundCount).toBe(1)
+    })
+  })
+
+  // ── Edge case: null linkData → 500 ──
+  describe("Null linkData returns 500", () => {
+    it("returns 500 when PaymentIntent has null linkData", async () => {
+      setupPostDeps()
+      seedSucceededPi({ linkData: null })
+
+      const res = await makePost({ payment_intent: "pi_test_refund001", reason: "duplicate" })
+      const body = await jsonBody(res)
+
+      expect(res.status).toBe(500)
+      expect(body.error.code).toBe("refund_failed")
+    })
+  })
+
+  // ── Edge case: PI has refund link but no partialRefund link → 500 ──
+  describe("Missing partialRefund HATEOAS link", () => {
+    it("returns 500 when partial refund is requested but only full refund link exists", async () => {
+      setupPostDeps()
+      seedSucceededPi({
+        linkData: {
+          "cardPayments:refund": { href: "/payments/settlements/refunds/full/only" },
+        },
+      })
+
+      const res = await makePost({ payment_intent: "pi_test_refund001", amount: 50 })
+      const body = await jsonBody(res)
+
+      expect(res.status).toBe(500)
+      expect(body.error.code).toBe("refund_failed")
     })
   })
 

@@ -87,6 +87,7 @@ model PaymentIntent {
   customerEmail    String?
   customerIpAddress String?
   shipping         Json?
+  totalRefunded    Int                   @default(0)
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
   refunds          Refund[]
@@ -117,4 +118,6 @@ model Refund {
   worldpayRefundId String?
   idempotencyKey   String?
   createdAt        DateTime      @default(now())
+
+  @@unique([merchantId, idempotencyKey])
 }

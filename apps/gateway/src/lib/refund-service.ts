@@ -4,8 +4,8 @@ import {
   getPaymentIntentByIdAndMerchant,
   createRefund,
   getRefundByIdAndMerchant,
-  getRefundsByPaymentIntent,
   getRefundByIdempotencyKey,
+  atomicIncrementTotalRefunded,
 } from "@repo/dal"
 
 function generateRfId(): string {
@@ -102,12 +102,15 @@ export async function handleCreateRefund(
   const originalAmount = pi.amount as number
   const currency = pi.currency as string
   const linkData = pi.linkData as Record<string, unknown> | null
+  const currentTotalRefunded = (pi.totalRefunded as number) ?? 0
 
-  // 6. Calculate cumulative refunded amount
-  const existingRefunds = await getRefundsByPaymentIntent(input.payment_intent)
-  const totalRefunded = existingRefunds.reduce((sum: number, r: Record<string, unknown>) => {
-    return sum + (r.amount as number)
-  }, 0)
+  // 6. Already fully refunded check (from PI record)
+  if (currentTotalRefunded >= originalAmount) {
+    return Response.json(
+      { error: { code: "already_refunded", message: "Payment intent has already been fully refunded" } },
+      { status: 400 },
+    )
+  }
 
   // 7. Determine refund amount
   let refundAmount: number
@@ -115,32 +118,22 @@ export async function handleCreateRefund(
     refundAmount = input.amount
   } else {
     // No amount specified → refund the remaining capturable amount
-    refundAmount = originalAmount - totalRefunded
+    refundAmount = originalAmount - currentTotalRefunded
   }
 
-  // 8. Validate amount constraints
-  if (totalRefunded + refundAmount > originalAmount) {
+  // 8. Validate amount constraints (pre-check before atomic write)
+  if (currentTotalRefunded + refundAmount > originalAmount) {
     return Response.json(
       { error: { code: "refund_exceeds_balance", message: "Refund amount exceeds available balance" } },
       { status: 400 },
     )
   }
 
-  // Check if full refund already done (original amount already fully refunded)
-  if (totalRefunded >= originalAmount) {
-    return Response.json(
-      { error: { code: "already_refunded", message: "Payment intent has already been fully refunded" } },
-      { status: 400 },
-    )
-  }
-
   // 9. Determine HATEOAS link to use
-  const isPartialRefund = refundAmount < originalAmount - totalRefunded || refundAmount < originalAmount
-  const refundLinkRel = input.amount !== undefined && input.amount < originalAmount
-    ? "cardPayments:partialRefund"
-    : totalRefunded > 0
-      ? "cardPayments:partialRefund"
-      : "cardPayments:refund"
+  // Full refund only when no prior refunds exist AND this refund covers the full original amount.
+  // All other cases (prior refunds exist, or amount < original) use partialRefund.
+  const isFullRefund = currentTotalRefunded === 0 && refundAmount === originalAmount
+  const refundLinkRel = isFullRefund ? "cardPayments:refund" : "cardPayments:partialRefund"
 
   const refundUrl = getHateoasLink(linkData, refundLinkRel)
   if (!refundUrl) {
@@ -165,9 +158,21 @@ export async function handleCreateRefund(
       body: wpBody,
     }) as { outcome?: string; refund?: { id?: string } }
 
+    // 11. Atomically reserve the refund amount on the PaymentIntent.
+    // This prevents race conditions — the UPDATE WHERE clause ensures
+    // concurrent requests can't both reserve the same balance.
+    const newTotal = await atomicIncrementTotalRefunded(input.payment_intent, refundAmount)
+    if (newTotal === null) {
+      // Atomic check failed — another request got there first or amount exceeded
+      return Response.json(
+        { error: { code: "refund_exceeds_balance", message: "Refund amount exceeds available balance" } },
+        { status: 400 },
+      )
+    }
+
     const worldpayRefundId = refundResult?.refund?.id ?? null
 
-    // 11. Store refund record
+    // 12. Store refund record
     await createRefund({
       id: refundId,
       merchantId: merchant.merchantId,
@@ -228,7 +233,7 @@ export async function handleGetRefund(
       currency: refund.currency,
       reason: refund.reason,
       status: refund.status,
-      created: refund.createdAt instanceof Date ? refund.createdAt.toISOString() : new Date().toISOString(),
+      created: new Date(refund.createdAt as string | number | Date).toISOString(),
     },
     { status: 200 },
   )
