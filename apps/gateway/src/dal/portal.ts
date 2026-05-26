@@ -204,6 +204,22 @@ export async function listStatements(input: {
   })
 }
 
+export async function createAuditLog(data: {
+  userId: string
+  merchantId?: string | null
+  action: string
+  metadata?: Record<string, unknown>
+}) {
+  return database.auditLog.create({ data: { merchantId: null, ...data, createdAt: new Date() } })
+}
+
+export async function getAuditLogs(input: { userId?: string; merchantId?: string }) {
+  const where: Record<string, unknown> = {}
+  if (input.userId) where.userId = input.userId
+  if (input.merchantId) where.merchantId = input.merchantId
+  return database.auditLog.findMany({ where, orderBy: { createdAt: "desc" } })
+}
+
 // ─── Stats ────────────────────────────────────────────────────
 
 export async function getMerchantStats(merchantId?: string | null) {

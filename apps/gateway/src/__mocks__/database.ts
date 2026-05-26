@@ -106,7 +106,7 @@ export function seedUser(data: Record<string, unknown>): string {
 }
 
 export function seedUserMerchant(data: Record<string, unknown>): string {
-  const id = `um_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  const id = (data.id as string) || `um_${Date.now()}_${Math.random().toString(36).slice(2)}`
   store.userMerchants.set(id, { id, ...data, createdAt: new Date() })
   return id
 }

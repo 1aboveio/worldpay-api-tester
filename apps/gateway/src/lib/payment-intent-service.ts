@@ -680,6 +680,12 @@ export async function handleListPaymentIntents(
   }
 
   const requestedLimit = Number(query.limit) || 10
+  if (requestedLimit < 1 || requestedLimit > 100) {
+    return new Response(
+      JSON.stringify({ error: { code: "validation_error", message: "limit must be between 1 and 100" } }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    )
+  }
   const limit = Math.min(Math.max(requestedLimit, 1), 100)
   
   const { listPaymentIntents } = await import("@repo/dal")
