@@ -749,3 +749,21 @@ describe("MIT Payments", () => {
     expect(body.status).toBe("requires_capture")
   })
 })
+
+// ─── FraudSight Effect Test ───────────────────────────────────
+
+describe("FraudSight effect on payment flow", () => {
+  it("highRisk + block → payment_failed with high_risk code", async () => {
+    const { wpCall } = setupDeps()
+    vi.mocked(wpCall).mockImplementation(async (path: string) => {
+      if (path === "/fraudsight/assessment") return { outcome: "highRisk", actionOnHighRisk: "block", score: 95, riskProfile: { href: "https://try.access.worldpay.com/riskProfile/blocked" } }
+      throw new Error("Should not reach CIT authorize")
+    })
+
+    const res = await makeRequest(cardRequest())
+    const body = await jsonBody(res)
+    expect(res.status).toBe(200)
+    expect(body.status).toBe("payment_failed")
+    expect(body.failure_code).toBe("high_risk")
+  })
+})

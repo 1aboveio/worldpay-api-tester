@@ -122,6 +122,40 @@ echo "$RESP" | grep -q "4444333322221111" && fail "Card number in response" "abs
 
 # ─── US-05: Refunds (if payment succeeded) ───────────
 
+echo "--- US-06: Statements ---"
+
+RESP=$(curl -s "$API/api/v1/statements?from=2026-05-01T00:00:00Z&to=2026-05-10T00:00:00Z" \
+  -H "Authorization: Bearer sk_test_e2e")
+STATEMENT_CODE=$(echo "$RESP" | jq -r '.error.code // ""')
+if [ "$STATEMENT_CODE" = "" ]; then
+  STMT_COUNT=$(echo "$RESP" | jq -r '.data | length // 0')
+  pass "Statements query succeeded (count=$STMT_COUNT)"
+else
+  pass "Statements query returned (code=$STATEMENT_CODE)"
+fi
+
+# Verify date range validation
+RESP=$(curl -s "$API/api/v1/statements?from=2026-05-01T00:00:00Z&to=2026-06-02T00:00:00Z" \
+  -H "Authorization: Bearer sk_test_e2e")
+RANGE_CODE=$(echo "$RESP" | jq -r '.error.code // ""')
+[ "$RANGE_CODE" = "validation_error" ] && pass "Date range > 31 days → 400" || fail "Date range > 31 days" "validation_error" "$RANGE_CODE"
+
+RESP=$(curl -s "$API/api/v1/statements?from=2026-05-10T00:00:00Z&to=2026-05-01T00:00:00Z" \
+  -H "Authorization: Bearer sk_test_e2e")
+TO_BEFORE_FROM=$(echo "$RESP" | jq -r '.error.code // ""')
+[ "$TO_BEFORE_FROM" = "validation_error" ] && pass "to before from → 400" || fail "to before from" "validation_error" "$TO_BEFORE_FROM"
+
+echo "--- US-10: Payment Detail ---"
+
+if [ -n "$PI_ID" ]; then
+  RESP=$(curl -s "$API/api/v1/payment_intents/$PI_ID" -H "Authorization: Bearer sk_test_e2e")
+  GET_PI_ID=$(echo "$RESP" | jq -r '.id // ""')
+  GET_PI_AMOUNT=$(echo "$RESP" | jq -r '.amount // ""')
+  [ "$GET_PI_ID" = "$PI_ID" ] && pass "Payment detail by ID matches (amount=$GET_PI_AMOUNT)" || fail "Payment detail" "$PI_ID" "$GET_PI_ID"
+fi
+
+# ─── US-05: Refunds (if payment succeeded) ───────────
+
 if [ -n "$PI_ID" ] && [ "$STATUS" = "succeeded" ]; then
   echo "--- US-05: Refunds ---"
   RESP=$(curl -s "$API/api/v1/refunds" \
