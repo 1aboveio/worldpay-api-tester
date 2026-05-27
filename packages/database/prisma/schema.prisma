@@ -18,6 +18,7 @@ model Merchant {
   apiKeys        ApiKey[]
   paymentMethods PaymentMethod[]
   paymentIntents PaymentIntent[]
+  checkoutSessions CheckoutSession[]
 }
 
 model ApiKey {
@@ -90,6 +91,24 @@ model PaymentIntent {
   shipping         Json?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
+}
+
+// Hosted checkout playground: a shareable checkout link. Authorization is by
+// possession of the unguessable id ("cs_..."); the public checkout page and pay
+// endpoint read amount/currency/merchant only from this row, never the client.
+model CheckoutSession {
+  id              String   @id            // app-generated "cs_..."
+  merchantId      String
+  merchant        Merchant @relation(fields: [merchantId], references: [id])
+  amount          Int
+  currency        String
+  captureMethod   String   @default("automatic") // automatic | manual
+  description     String?
+  status          String   @default("open")      // open | processing | completed | failed | expired
+  paymentIntentId String?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 // Better Auth models

@@ -12,6 +12,7 @@ const store: {
   refunds: Map<string, Record<string, unknown>>
   statements: Map<string, Record<string, unknown>>
   threeDSSessions: Map<string, Record<string, unknown>>
+  checkoutSessions: Map<string, Record<string, unknown>>
   auditLogs: Record<string, unknown>[]
 } = {
   paymentIntents: new Map(),
@@ -23,6 +24,7 @@ const store: {
   refunds: new Map(),
   statements: new Map(),
   threeDSSessions: new Map(),
+  checkoutSessions: new Map(),
   auditLogs: [],
 }
 
@@ -73,6 +75,7 @@ export function resetMockStores() {
   store.refunds.clear()
   store.statements.clear()
   store.threeDSSessions.clear()
+  store.checkoutSessions.clear()
   store.auditLogs = []
 }
 
@@ -432,6 +435,57 @@ export const database = {
       if (where?.userId) logs = logs.filter((l: any) => l.userId === where.userId)
       if (where?.merchantId) logs = logs.filter((l: any) => l.merchantId === where.merchantId)
       return logs
+    },
+  },
+  checkoutSession: {
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const record = { status: "open", ...data, createdAt: new Date(), updatedAt: new Date() }
+      store.checkoutSessions.set(data.id as string, record)
+      return record
+    },
+    findUnique: async ({ where }: { where: { id: string } }) => {
+      return store.checkoutSessions.get(where.id) ?? null
+    },
+    findMany: async ({ where, orderBy, take }: { where?: Record<string, unknown>; orderBy?: Record<string, string>; take?: number }) => {
+      let rows = Array.from(store.checkoutSessions.values())
+      if (where) {
+        rows = rows.filter((cs) => {
+          for (const [k, v] of Object.entries(where)) {
+            if ((cs as any)[k] !== v) return false
+          }
+          return true
+        })
+      }
+      if (orderBy?.createdAt) {
+        rows.sort((a: any, b: any) => {
+          const aD = a.createdAt?.getTime?.() ?? 0
+          const bD = b.createdAt?.getTime?.() ?? 0
+          return orderBy.createdAt === "desc" ? bD - aD : aD - bD
+        })
+      }
+      if (take) rows = rows.slice(0, take)
+      return rows
+    },
+    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      const existing = store.checkoutSessions.get(where.id)
+      if (!existing) throw new Error("CheckoutSession not found")
+      const updated = { ...existing, ...data, updatedAt: new Date() }
+      store.checkoutSessions.set(where.id, updated)
+      return updated
+    },
+    updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+      let count = 0
+      for (const [id, cs] of store.checkoutSessions) {
+        let match = true
+        for (const [k, v] of Object.entries(where)) {
+          if ((cs as any)[k] !== v) { match = false; break }
+        }
+        if (match) {
+          store.checkoutSessions.set(id, { ...cs, ...data, updatedAt: new Date() })
+          count++
+        }
+      }
+      return { count }
     },
   },
   threeDSSession: {
