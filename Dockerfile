@@ -39,6 +39,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 
+# Install psql client for DB init
+RUN apk add --no-cache postgresql16-client
+
 # Copy standalone output
 COPY --from=builder /app/apps/gateway/.next/standalone ./
 
@@ -64,6 +67,5 @@ EXPOSE 8080
 
 # Find and run the standalone server entrypoint
 # Run prisma db push (schema migration), then start server
-# Start server immediately, run db push in background after short delay
-# Start server, run db push in background after server is listening
-CMD ["sh", "-c", "node apps/gateway/server.js & PID=$!; sleep 3; cd packages/database && prisma db push --accept-data-loss --skip-generate; wait $PID"]
+# Start server, grant DB perms, push schema
+CMD ["sh", "-c", "node apps/gateway/server.js & PID=$!; sleep 3; PGPASSWORD=WpPostgres1234! psql -h 10.58.0.11 -p 5432 -U postgres -d postgres -c \"GRANT CONNECT ON DATABASE worldpay TO worldpay\" -c \"GRANT ALL ON DATABASE worldpay TO worldpay\" 2>/dev/null; cd packages/database && prisma db push --accept-data-loss --skip-generate; wait $PID"]
