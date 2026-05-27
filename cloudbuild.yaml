@@ -70,7 +70,7 @@ steps:
       - '--subnet=default'
       - '--vpc-egress=all-traffic'
       - '--set-cloudsql-instances=cosmic-heaven-479306-v5:us-central1:ai-dev'
-      - '--set-env-vars=NODE_ENV=production,ALLOWED_EMAIL_DOMAIN=fmmpay.com,BETTER_AUTH_URL=https://worldpay-api-tester-dev-903828198190.us-central1.run.app'
+      - '--set-env-vars=NODE_ENV=production,ALLOWED_EMAIL_DOMAIN=fmmpay.com,BETTER_AUTH_URL=https://worldpay-api-tester-dev-903828198190.us-central1.run.app,DATABASE_SSL=require'
       - '--set-secrets=DATABASE_URL=worldpay-api-tester-db-url:latest'
       - '--set-secrets=WORLDPAY_USERNAME=worldpay-api-tester-wp-username:latest'
       - '--set-secrets=WORLDPAY_PASSWORD=worldpay-api-tester-wp-password:latest'
