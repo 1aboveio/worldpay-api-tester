@@ -8,7 +8,7 @@ import { test, expect } from "@playwright/test"
  */
 
 // Pages that should render without auth (or redirect gracefully)
-const publicPages = ["/login", "/"]
+const publicPages = ["/login", "/", "/register"]
 
 // Pages that require authentication — we test that they redirect
 const protectedPages = [
@@ -19,7 +19,6 @@ const protectedPages = [
   "/refunds",
   "/settings",
   "/statements",
-  "/register",
 ]
 
 test.describe("Public pages", () => {
