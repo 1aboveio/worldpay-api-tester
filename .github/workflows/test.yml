@@ -105,13 +105,10 @@ jobs:
       - name: Copy static assets for standalone
         run: |
           cd apps/gateway
-          # Debug: list standalone contents
-          find .next/standalone -name server.js 2>/dev/null || echo "No server.js found"
-          ls .next/standalone/projects/ 2>/dev/null || echo "No projects dir"
           # Copy static into the standalone .next dir
-          for dir in .next/standalone/projects/*/apps/gateway/.next; do
-            cp -r .next/static "$dir/static" && echo "Copied to $dir/static"
-          done
+          # CI standalone output is at .next/standalone/apps/gateway/
+          mkdir -p .next/standalone/apps/gateway/.next
+          cp -r .next/static .next/standalone/apps/gateway/.next/static
 
       - name: Install Playwright browsers
         run: cd apps/gateway && npx playwright install chromium --with-deps
@@ -123,7 +120,7 @@ jobs:
           DATABASE_URL="postgres://worldpay:worldpay@localhost:5432/worldpay" \
           BETTER_AUTH_SECRET="ci-test-secret-at-least-32-chars-long!!" \
           BETTER_AUTH_URL="http://localhost:3003" \
-          node .next/standalone/projects/*/apps/gateway/server.js &
+          node .next/standalone/apps/gateway/server.js &
           sleep 5
           npx playwright test --config=playwright.config.ts
         env:

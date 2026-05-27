@@ -58,4 +58,4 @@ COPY --from=builder /app/packages/database/generated ./packages/database/generat
 EXPOSE 8080
 
 # Find and run the standalone server entrypoint
-CMD ["sh", "-c", "exec node $(find . -name server.js -path '*/apps/gateway/*' | head -1)"]
+CMD ["sh", "-c", "exec node apps/gateway/server.js"]
