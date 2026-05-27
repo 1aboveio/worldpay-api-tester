@@ -364,6 +364,49 @@ describe("POST /api/v1/payment_intents/{id}/device_data", () => {
     });
   });
 
+  // ── Edge case: requires_device_data from runThreeDSFlow ──
+  describe("requires_device_data outcome", () => {
+    it("returns requires_device_data with DDC details", async () => {
+      const mockRun3DS = vi.fn().mockResolvedValue({
+        type: "requires_device_data" as const,
+        ddcUrl: "https://secure.worldpay.com/rp/api/ddc.html",
+        ddcJwt: "mock-ddc-jwt-retry",
+      });
+
+      const mockGetPi = vi.fn().mockResolvedValue(makeMockPi());
+      const mockUpdateStatus = vi.fn().mockResolvedValue({});
+
+      __setDeps({
+        getPaymentIntentByIdAndMerchant: mockGetPi as any,
+        getWorldpayClient: () => makeMockWpClient() as any,
+        runThreeDSFlow: mockRun3DS as any,
+        updatePaymentIntentStatus: mockUpdateStatus as any,
+      });
+
+      const res = await POST(
+        makeRequest("pi_dd_001", {
+          collection_reference: "0_4DDC_RETRY",
+        }),
+        { params: Promise.resolve({ id: "pi_dd_001" }) },
+      );
+      const body = await jsonBody(res);
+
+      expect(res.status).toBe(200);
+      expect(body.status).toBe("requires_device_data");
+      expect(body.next_action.type).toBe("device_data_collection");
+      expect(body.next_action.device_data_collection.ddc_url).toBe(
+        "https://secure.worldpay.com/rp/api/ddc.html",
+      );
+      expect(body.next_action.device_data_collection.ddc_jwt).toBe(
+        "mock-ddc-jwt-retry",
+      );
+      expect(mockUpdateStatus).toHaveBeenCalledWith(
+        "pi_dd_001",
+        "requires_device_data",
+      );
+    });
+  });
+
   // ── Error handling ──
   describe("Internal error handling", () => {
     it("returns 500 on unexpected errors", async () => {
