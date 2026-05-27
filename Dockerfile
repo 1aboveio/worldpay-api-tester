@@ -41,7 +41,13 @@ ENV PORT=8080
 
 # Copy standalone output
 COPY --from=builder /app/apps/gateway/.next/standalone ./
-COPY --from=builder /app/apps/gateway/.next/static ./apps/gateway/.next/static
+
+# Turbopack standalone doesn't include static assets — copy them into the .next dir
+# The project directory name varies, so use a wildcard
+COPY --from=builder /app/apps/gateway/.next/static /tmp/next-static
+RUN for dir in projects/*/apps/gateway/.next; do cp -r /tmp/next-static "$dir/static"; done
+
+# Copy public directory
 RUN mkdir -p ./apps/gateway/public
 
 # Copy Prisma generated client (needed at runtime by DAL)
