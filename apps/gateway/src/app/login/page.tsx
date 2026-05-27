@@ -77,7 +77,7 @@ export default function LoginPage() {
         <CardFooter className="justify-center">
           <p className="text-sm text-muted-foreground">
             Don&apos;t have an account?{" "}
-            <a href="/portal/register" className="font-medium text-primary underline underline-offset-4 hover:text-primary/90">
+            <a href="/register" className="font-medium text-primary underline underline-offset-4 hover:text-primary/90">
               Register
             </a>
           </p>
