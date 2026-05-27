@@ -26,6 +26,7 @@ export function PortalSidebar() {
       ]
     : [
         { href: "/dashboard", label: "Dashboard", icon: "📊" },
+        { href: "/playground", label: "Playground", icon: "🛒" },
         { href: "/payments", label: "Payments", icon: "💳" },
         { href: "/payment-methods", label: "Payment Methods", icon: "🔑" },
         { href: "/refunds", label: "Refunds", icon: "↩️" },

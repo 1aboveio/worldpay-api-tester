@@ -28,6 +28,16 @@ export type CreateTokenFn = (
 ) => Promise<{ tokenHref: string; brand: string; last4: string; expiryMonth: number; expiryYear: number }>
 
 /**
+ * Tokenization from a Worldpay Access Checkout hosted-fields session.
+ * In production, this calls POST /tokens with paymentInstrument
+ * `{ type: "card/checkout", sessionHref }`. In tests, this is mocked.
+ */
+export type CreateTokenFromSessionFn = (
+  sessionHref: string,
+  entity: string,
+) => Promise<{ tokenHref: string; brand: string; last4: string }>
+
+/**
  * Resolve merchant from API key.
  * Looks up merchant + entity + payFac config.
  */

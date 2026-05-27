@@ -25,3 +25,7 @@ export function generatePaymentMethodId(): string {
 export function generatePaymentIntentId(): string {
   return `pi_${generateId()}`;
 }
+
+export function generateCheckoutSessionId(): string {
+  return `cs_${generateId()}`;
+}
