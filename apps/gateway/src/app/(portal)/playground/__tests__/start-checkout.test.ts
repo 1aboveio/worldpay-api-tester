@@ -8,7 +8,20 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 const getSession = vi.fn()
 vi.mock("@/lib/auth-server", () => ({ getSession: () => getSession() }))
 
+class NextRedirectError extends Error {
+  digest = "NEXT_REDIRECT"
+  constructor(url: string) {
+    super(`NEXT_REDIRECT: ${url}`)
+  }
+}
+const mockRedirect = vi.fn((url: string) => {
+  throw new NextRedirectError(url)
+})
+vi.mock("next/navigation", () => ({ redirect: (url: string) => mockRedirect(url) }))
+vi.mock("@/app/(portal)/playground/start-checkout-form", () => ({ StartCheckoutForm: () => null }))
+
 import { startCheckoutAction } from "@/app/(portal)/playground/actions"
+import PlaygroundPage from "@/app/(portal)/playground/page"
 import { resetMockStores, getMockStore } from "@repo/database"
 
 function form(fields: Record<string, string>): FormData {
@@ -20,6 +33,7 @@ function form(fields: Record<string, string>): FormData {
 beforeEach(() => {
   resetMockStores()
   getSession.mockReset()
+  mockRedirect.mockClear()
   process.env.BETTER_AUTH_URL = "https://example.test"
 })
 
@@ -82,5 +96,44 @@ describe("startCheckoutAction", () => {
     const res = await startCheckoutAction(null, form({ amount: "0", currency: "USD" }))
     expect(res.success).toBe(false)
     expect(res.error?.code).toBe("VALIDATION_ERROR")
+  })
+})
+
+describe("PlaygroundPage", () => {
+  it("redirects to /login when not signed in", async () => {
+    getSession.mockResolvedValue(null)
+    await expect(PlaygroundPage()).rejects.toThrow(NextRedirectError)
+    expect(mockRedirect).toHaveBeenCalledWith("/login")
+  })
+
+  it("redirects to /dashboard when no active merchant", async () => {
+    getSession.mockResolvedValue({ activeMerchantId: null, availableMerchants: [], isPlatformAdmin: true })
+    await expect(PlaygroundPage()).rejects.toThrow(NextRedirectError)
+    expect(mockRedirect).toHaveBeenCalledWith("/dashboard")
+  })
+
+  it("renders recent checkouts for the active merchant", async () => {
+    getSession.mockResolvedValue({
+      activeMerchantId: "m_mine",
+      availableMerchants: [{ merchantId: "m_mine", merchantName: "Mine", role: "merchant" }],
+      isPlatformAdmin: false,
+    })
+    getMockStore().checkoutSessions.set("cs_1", {
+      id: "cs_1", merchantId: "m_mine", amount: 4200, currency: "USD",
+      captureMethod: "automatic", status: "open", expiresAt: new Date(Date.now() + 1000),
+      createdAt: new Date(), updatedAt: new Date(),
+    })
+    const el = await PlaygroundPage()
+    expect(el).toBeTruthy()
+  })
+
+  it("renders the empty state when there are no checkouts", async () => {
+    getSession.mockResolvedValue({
+      activeMerchantId: "m_empty",
+      availableMerchants: [{ merchantId: "m_empty", merchantName: "Empty", role: "merchant" }],
+      isPlatformAdmin: false,
+    })
+    const el = await PlaygroundPage()
+    expect(el).toBeTruthy()
   })
 })

@@ -19,6 +19,10 @@ export default defineConfig({
         "src/**/smoke/**",
         "src/test-setup.ts",
         "**/*.d.ts",
+        // Browser/SDK-driven client components — not exercisable in the node
+        // test env (Worldpay Access Checkout iframes, clipboard, useActionState).
+        "src/app/checkout/**/checkout-client.tsx",
+        "src/app/**/start-checkout-form.tsx",
       ],
       thresholds: {
         statements: 60,
