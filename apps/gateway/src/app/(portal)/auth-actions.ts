@@ -8,7 +8,8 @@ import { getSession } from "@/lib/auth-server"
 import { loginSchema, registerSchema, type ActionResult } from "./auth-schemas"
 
 function isFmmpayEmail(email: string): boolean {
-  return email.toLowerCase().endsWith("@fmmpay.com")
+  const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN || "fmmpay.com"
+  return email.toLowerCase().endsWith(`@${allowedDomain}`)
 }
 
 export async function loginAction(
@@ -26,6 +27,10 @@ export async function loginAction(
       fieldErrors[key].push(issue.message)
     }
     return { success: false, error: { code: "VALIDATION_ERROR", message: "Invalid input.", fieldErrors } }
+  }
+
+  if (!isFmmpayEmail(parsed.data.email)) {
+    return { success: false, error: { code: "ACCESS_DENIED", message: `Only @${process.env.ALLOWED_EMAIL_DOMAIN || "fmmpay.com"} accounts are permitted.` } }
   }
 
   try {
@@ -64,8 +69,11 @@ export async function registerAction(
     return { success: false, error: { code: "VALIDATION_ERROR", message: "Invalid input.", fieldErrors } }
   }
 
+  if (!isFmmpayEmail(parsed.data.email)) {
+    return { success: false, error: { code: "ACCESS_DENIED", message: `Only @${process.env.ALLOWED_EMAIL_DOMAIN || "fmmpay.com"} accounts are permitted.` } }
+  }
+
   const { email, password, name } = parsed.data
-  const isPlatformAdmin = isFmmpayEmail(email)
 
   try {
     const existing = await database.user.findUnique({ where: { email } })
@@ -84,20 +92,11 @@ export async function registerAction(
 
     const userId = result.user.id
 
-    if (isPlatformAdmin) {
-      const allMerchants = await database.merchant.findMany()
-      for (const merchant of allMerchants) {
-        await database.userMerchant.create({
-          data: { userId, merchantId: merchant.id as string, role: "platform_admin" },
-        })
-      }
-    } else {
-      const firstMerchant = await database.merchant.findFirst()
-      if (firstMerchant) {
-        await database.userMerchant.create({
-          data: { userId, merchantId: firstMerchant.id as string, role: "merchant" },
-        })
-      }
+    const allMerchants = await database.merchant.findMany()
+    for (const merchant of allMerchants) {
+      await database.userMerchant.create({
+        data: { userId, merchantId: merchant.id as string, role: "platform_admin" },
+      })
     }
   } catch (err) {
     console.error("Registration error:", err)

@@ -61,7 +61,7 @@ export default function RegisterPage() {
                 <p className="text-sm text-destructive">{state.error.fieldErrors.email[0]}</p>
               )}
               <p className="text-xs text-muted-foreground">
-                @fmmpay.com emails get platform admin access
+                Only @fmmpay.com accounts are permitted
               </p>
             </div>
 
