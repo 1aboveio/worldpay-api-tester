@@ -1,4 +1,4 @@
-name: Test
+name: Test & E2E
 
 on:
   push:
@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  unit:
+    name: Unit Tests + Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -30,7 +31,107 @@ jobs:
         env:
           DATABASE_URL: postgres://localhost:5432/test
 
-      - name: Run tests
-        run: pnpm --filter @apps/gateway test
+      - name: Run unit tests with coverage
+        run: pnpm --filter @apps/gateway test:coverage
         env:
           DATABASE_URL: postgres://localhost:5432/test
+
+      - name: Check coverage thresholds
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          working-directory: apps/gateway
+
+  e2e:
+    name: Browser E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: unit
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: worldpay
+          POSTGRES_PASSWORD: worldpay
+          POSTGRES_DB: worldpay
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @repo/database db:generate
+        env:
+          DATABASE_URL: postgres://worldpay:worldpay@localhost:5432/worldpay
+
+      - name: Run migrations
+        run: pnpm --filter @repo/database exec prisma db push --accept-data-loss
+        env:
+          DATABASE_URL: postgres://worldpay:worldpay@localhost:5432/worldpay
+
+      - name: Seed test data
+        run: |
+          PGPASSWORD=worldpay psql -h localhost -U worldpay -d worldpay -c "
+            INSERT INTO \"Merchant\" (id, name, entity, \"payFacConfig\", status, \"createdAt\", \"updatedAt\")
+            VALUES ('m_test', 'Test Merchant', 'test_entity', '{}', 'active', NOW(), NOW())
+            ON CONFLICT (id) DO NOTHING;
+          "
+          HASH=$(node -e "const {createHash}=require('crypto'); console.log(createHash('sha256').update('sk_test_e2e').digest('hex'))")
+          PGPASSWORD=worldpay psql -h localhost -U worldpay -d worldpay -c "
+            INSERT INTO \"ApiKey\" (id, \"keyHash\", prefix, \"merchantId\", \"isActive\", \"createdAt\", \"updatedAt\")
+            VALUES ('ak_test', '$HASH', 'sk_test_', 'm_test', true, NOW(), NOW())
+            ON CONFLICT (id) DO NOTHING;
+          "
+
+      - name: Build app
+        run: pnpm --filter @apps/gateway build
+        env:
+          DATABASE_URL: postgres://worldpay:worldpay@localhost:5432/worldpay
+
+      - name: Copy static assets for standalone
+        run: |
+          cd apps/gateway
+          for dir in .next/standalone/projects/*/apps/gateway/.next; do
+            cp -r .next/static "$dir/static"
+          done
+
+      - name: Install Playwright browsers
+        run: cd apps/gateway && npx playwright install chromium --with-deps
+
+      - name: Start server and run E2E
+        run: |
+          cd apps/gateway
+          PORT=3003 \
+          DATABASE_URL="postgres://worldpay:worldpay@localhost:5432/worldpay" \
+          BETTER_AUTH_SECRET="ci-test-secret-at-least-32-chars-long!!" \
+          BETTER_AUTH_URL="http://localhost:3003" \
+          node .next/standalone/projects/*/apps/gateway/server.js &
+          sleep 5
+          npx playwright test --config=playwright.config.ts
+        env:
+          DATABASE_URL: postgres://worldpay:worldpay@localhost:5432/worldpay
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: apps/gateway/test-results/
+          retention-days: 7

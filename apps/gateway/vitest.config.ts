@@ -7,6 +7,18 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/__tests__/setup.ts"],
     exclude: ["e2e/**", "node_modules/**"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/__tests__/**", "src/__mocks__/**", "src/test-setup.ts", "e2e/**"],
+      thresholds: {
+        statements: 50,
+        branches: 30,
+        functions: 40,
+        lines: 50,
+      },
+    },
   },
   esbuild: {
     jsx: "automatic",
