@@ -134,6 +134,69 @@ export async function createToken(
   })
 }
 
+/**
+ * Map the short media-type keys the payment-intent service passes
+ * (e.g. "payments-v7") to the full Worldpay media types. Worldpay rejects the
+ * short forms as an invalid Content-Type.
+ */
+export const SHORT_MEDIA_TYPES: Record<string, string> = {
+  "tokens-v3": MediaTypes.TOKENS,
+  "payments-v7": MediaTypes.CARD_PAYMENTS,
+  "fraudsight-v1": MediaTypes.FRAUDSIGHT,
+  "3ds-v2": MediaTypes.THREE_DS,
+}
+
+/** Resolve a short media-type key to its full Worldpay media type (pass-through if already full). */
+export function resolveMediaType(key: string): string {
+  return SHORT_MEDIA_TYPES[key] ?? key
+}
+
+/**
+ * Tokenize a raw card via the Worldpay Tokens API. Uses `card/front` (the
+ * Tokens API type — NOT `card/plain`, which is Payments-only), the mandatory
+ * `merchant.entity`, and omits `cvc` (not allowed when creating a token).
+ * Worldpay returns 409 with the existing token when the card was already
+ * tokenized — that's treated as success (idempotent).
+ */
+export async function createCardToken(
+  card: { number: string; expiryMonth: number; expiryYear: number; cardholderName?: string },
+  entity: string,
+): Promise<{ tokenHref: string; brand: string; last4: string }> {
+  type TokenResult = {
+    tokenPaymentInstrument?: { href?: string }
+    paymentInstrument?: { brand?: string; last4Digits?: string; cardNumber?: string }
+  }
+  let result: TokenResult
+  try {
+    result = await worldpayRequest<TokenResult>("/tokens", {
+      mediaType: MediaTypes.TOKENS,
+      body: {
+        description: "Card token",
+        merchant: { entity },
+        paymentInstrument: {
+          type: "card/front",
+          cardHolderName: card.cardholderName ?? "Cardholder",
+          cardNumber: card.number,
+          cardExpiryDate: { month: card.expiryMonth, year: card.expiryYear },
+        },
+      },
+    })
+  } catch (err) {
+    const e = err as { status?: number; body?: TokenResult }
+    if (e.status === 409 && e.body?.tokenPaymentInstrument?.href) {
+      result = e.body
+    } else {
+      throw err
+    }
+  }
+  const masked = result.paymentInstrument?.cardNumber ?? ""
+  return {
+    tokenHref: result.tokenPaymentInstrument?.href ?? "",
+    brand: result.paymentInstrument?.brand ?? "visa",
+    last4: result.paymentInstrument?.last4Digits ?? masked.slice(-4) ?? "1111",
+  }
+}
+
 /** Card Payments API request */
 export interface CardPaymentRequest {
   token: string

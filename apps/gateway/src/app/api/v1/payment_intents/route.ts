@@ -5,34 +5,19 @@ import {
   type PaymentIntentServiceDeps,
 } from "@/lib/payment-intent-service"
 import { resolveMerchantFromApiKey } from "@/lib/auth"
-import { worldpayRequest } from "@/lib/worldpay-client"
+import { worldpayRequest, resolveMediaType, createCardToken } from "@/lib/worldpay-client"
 
 const defaultDeps: PaymentIntentServiceDeps = {
-  wpCall: (async (path: string, mediaType: string, body?: unknown) => {
-    return worldpayRequest(path, { method: body ? "POST" : "GET", mediaType, body } as any)
+  wpCall: (async (path: string, mediaType: string, options?: { body?: unknown }) => {
+    return worldpayRequest(path, {
+      method: options?.body ? "POST" : "GET",
+      mediaType: resolveMediaType(mediaType),
+      body: options?.body,
+    } as any)
   }) as any,
   createToken: async (card: any, entity: string) => {
-    const result = await worldpayRequest("/tokens", {
-      method: "POST",
-      mediaType: "application/vnd.worldpay.tokens-v3.hal+json",
-      body: {
-        tokenType: "card",
-        paymentInstrument: {
-          type: "card/plain",
-          cardNumber: card.number,
-          expiryDate: { month: card.expiryMonth, year: card.expiryYear },
-          cvc: card.cvc,
-          cardHolderName: card.cardholderName,
-        },
-      },
-    } as any) as any
-    return {
-      tokenHref: result.tokenPaymentInstrument?.href ?? "",
-      brand: result.paymentInstrument?.brand ?? "visa",
-      last4: result.paymentInstrument?.last4Digits ?? "1111",
-      expiryMonth: card.expiryMonth,
-      expiryYear: card.expiryYear,
-    }
+    const { tokenHref, brand, last4 } = await createCardToken(card, entity)
+    return { tokenHref, brand, last4, expiryMonth: card.expiryMonth, expiryYear: card.expiryYear }
   },
   resolveMerchant: async (apiKey: string) => {
     const record = await resolveMerchantFromApiKey(apiKey)

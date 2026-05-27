@@ -3,47 +3,49 @@
  *
  * Authorization is by possession of the unguessable checkout-session id — NO
  * API key. These tests prove that, the session-state guards, and that the card
- * the shopper enters flows through tokenize (card/plain) → FraudSight → CIT
- * authorize (the real payment-intent service) using a mocked Worldpay client.
+ * the shopper enters flows through tokenize (card/front) → FraudSight → CIT
+ * authorize.
+ *
+ * We mock at the `fetch` boundary so the REAL worldpay-client runs — verifying
+ * the actual request shaping (card/front tokenization, media types).
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
-// Default canned Worldpay responses for the happy path (tokenize → FraudSight → CIT).
-async function defaultWorldpayImpl(path: string) {
-  if (path === "/tokens") {
-    return {
-      tokenPaymentInstrument: { href: "/tokens/tok_1" },
-      paymentInstrument: { brand: "visa", last4Digits: "1111" },
-    }
-  }
-  if (path === "/fraudsight/assessment") {
-    return { outcome: "lowRisk", riskProfile: { href: "/riskProfile/rp_1" } }
-  }
-  if (path === "/cardPayments/customerInitiatedTransactions") {
-    return { outcome: "sentForSettlement", payment: { id: "wp_pay_1" }, scheme: { reference: "REF1" }, _links: {} }
-  }
-  throw new Error(`Unmocked worldpayRequest path: ${path}`)
+function jsonResponse(status: number, body: unknown) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response
 }
 
-// Mock the Worldpay HTTP client so the pay route's inline deps hit canned
-// responses instead of the network.
-vi.mock("@/lib/worldpay-client", () => ({
-  MediaTypes: {
-    TOKENS: "application/vnd.worldpay.tokens-v3.hal+json",
-    CARD_PAYMENTS: "application/vnd.worldpay.payments-v7+json",
-    FRAUDSIGHT: "application/vnd.worldpay.fraudsight-v1.hal+json",
-  },
-  worldpayRequest: vi.fn(),
-}))
+function defaultFetchImpl(url: string) {
+  if (url.includes("/tokens")) {
+    return jsonResponse(200, {
+      tokenPaymentInstrument: { href: "/tokens/tok_checkout_1" },
+      paymentInstrument: { brand: "visa", last4Digits: "1111" },
+    })
+  }
+  if (url.includes("/fraudsight/assessment")) {
+    return jsonResponse(200, { outcome: "lowRisk", riskProfile: { href: "/riskProfile/rp_1" } })
+  }
+  if (url.includes("/customerInitiatedTransactions")) {
+    return jsonResponse(200, { outcome: "sentForSettlement", payment: { id: "wp_pay_1" }, scheme: { reference: "REF1" }, _links: {} })
+  }
+  throw new Error(`Unmocked fetch: ${url}`)
+}
+
+const fetchMock = vi.fn()
 
 import { POST } from "@/app/api/checkout/[id]/pay/route"
-import { worldpayRequest } from "@/lib/worldpay-client"
 import { resetMockStores, getMockStore } from "@repo/database"
 import { NextRequest } from "next/server"
 
-const CS_ID = "cs_test_open_1"
+// Parsed JSON body of the fetch call to a given Worldpay path fragment.
+function fetchBodyFor(pathFragment: string): Record<string, unknown> | undefined {
+  const call = fetchMock.mock.calls.find((c) => String(c[0]).includes(pathFragment))
+  if (!call) return undefined
+  return JSON.parse((call[1] as { body: string }).body)
+}
 
+const CS_ID = "cs_test_open_1"
 const VALID_CARD = { number: "4444333322221111", expiry_month: 12, expiry_year: 2029, cvc: "123" }
 
 function seedMerchant() {
@@ -85,8 +87,9 @@ function payRequest(id: string, body: unknown) {
 
 beforeEach(() => {
   resetMockStores()
-  ;(worldpayRequest as ReturnType<typeof vi.fn>).mockReset()
-  ;(worldpayRequest as ReturnType<typeof vi.fn>).mockImplementation(defaultWorldpayImpl)
+  global.fetch = fetchMock as unknown as typeof fetch
+  fetchMock.mockReset()
+  fetchMock.mockImplementation((url: string) => defaultFetchImpl(url))
   seedMerchant()
   seedCheckout()
 })
@@ -100,21 +103,21 @@ describe("POST /api/checkout/{id}/pay", () => {
     expect(body.status).toBe("succeeded")
     expect(body.id).toMatch(/^pi_/)
 
-    // Session is marked completed and linked to the payment intent.
     const cs = getMockStore().checkoutSessions.get(CS_ID)
     expect(cs?.status).toBe("completed")
     expect(cs?.paymentIntentId).toBe(body.id)
   })
 
-  it("tokenizes the entered card via card/plain", async () => {
+  it("tokenizes the entered card via card/front with the merchant entity", async () => {
     await payRequest(CS_ID, VALID_CARD)
 
-    const tokenCall = (worldpayRequest as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === "/tokens")
-    expect(tokenCall).toBeTruthy()
-    const tokenBody = (tokenCall![1] as { body: Record<string, unknown> }).body
-    const instrument = tokenBody.paymentInstrument as Record<string, unknown>
-    expect(instrument.type).toBe("card/plain")
+    const tokenBody = fetchBodyFor("/tokens")
+    expect(tokenBody).toBeTruthy()
+    const instrument = tokenBody!.paymentInstrument as Record<string, unknown>
+    expect(instrument.type).toBe("card/front")
     expect(instrument.cardNumber).toBe("4444333322221111")
+    expect(instrument.cvc).toBeUndefined() // cvc is not allowed in the Tokens API
+    expect((tokenBody!.merchant as Record<string, unknown>)?.entity).toBe("entity_acme")
   })
 
   it("returns 400 when card details are incomplete", async () => {
@@ -123,10 +126,10 @@ describe("POST /api/checkout/{id}/pay", () => {
     expect((await res.json()).error.code).toBe("validation_error")
   })
 
-  it("strips spaces from the entered card number", async () => {
+  it("strips spaces from the entered card number before tokenizing", async () => {
     await payRequest(CS_ID, { ...VALID_CARD, number: "4444 3333 2222 1111" })
-    const tokenCall = (worldpayRequest as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === "/tokens")
-    const instrument = (tokenCall![1] as { body: Record<string, unknown> }).body.paymentInstrument as Record<string, unknown>
+    const tokenBody = fetchBodyFor("/tokens")
+    const instrument = tokenBody!.paymentInstrument as Record<string, unknown>
     expect(instrument.cardNumber).toBe("4444333322221111")
   })
 
@@ -151,16 +154,27 @@ describe("POST /api/checkout/{id}/pay", () => {
     expect((await second.json()).error.code).toBe("checkout_unavailable")
   })
 
+  it("treats a Worldpay 409 (card already tokenized) as success", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/tokens")) {
+        return jsonResponse(409, {
+          tokenPaymentInstrument: { href: "/tokens/tok_existing" },
+          paymentInstrument: { brand: "VISA", cardNumber: "4444********1111" },
+        })
+      }
+      return defaultFetchImpl(url)
+    })
+
+    const res = await payRequest(CS_ID, VALID_CARD)
+    expect((await res.json()).status).toBe("succeeded")
+  })
+
   it("releases the session back to open when authorization is refused", async () => {
-    ;(worldpayRequest as ReturnType<typeof vi.fn>).mockImplementation(async (path: string) => {
-      if (path === "/tokens") {
-        return { tokenPaymentInstrument: { href: "/tokens/tok_x" }, paymentInstrument: { brand: "visa", last4Digits: "1111" } }
+    fetchMock.mockImplementation((url: string) => {
+      if (url.includes("/customerInitiatedTransactions")) {
+        return jsonResponse(200, { outcome: "refused", refusal: { code: "5", description: "REFUSED" }, _links: {} })
       }
-      if (path === "/fraudsight/assessment") return { outcome: "lowRisk" }
-      if (path === "/cardPayments/customerInitiatedTransactions") {
-        return { outcome: "refused", refusal: { code: "5", description: "REFUSED" }, _links: {} }
-      }
-      throw new Error(`Unmocked: ${path}`)
+      return defaultFetchImpl(url)
     })
 
     const res = await payRequest(CS_ID, VALID_CARD)

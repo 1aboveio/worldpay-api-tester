@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 import { handleCreatePaymentIntent, type PaymentIntentServiceDeps } from "@/lib/payment-intent-service"
-import { worldpayRequest, MediaTypes } from "@/lib/worldpay-client"
+import { worldpayRequest, resolveMediaType, createCardToken } from "@/lib/worldpay-client"
 import { database } from "@repo/database"
 import {
   getCheckoutSessionById,
@@ -75,35 +75,13 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
     wpCall: (async (path: string, mediaType: string, options?: { body?: unknown }) => {
       return worldpayRequest(path, {
         method: options?.body ? "POST" : "GET",
-        mediaType,
+        mediaType: resolveMediaType(mediaType),
         body: options?.body,
       } as never)
     }) as PaymentIntentServiceDeps["wpCall"],
-    createToken: async (cardDetails) => {
-      const result = (await worldpayRequest("/tokens", {
-        method: "POST",
-        mediaType: MediaTypes.TOKENS,
-        body: {
-          tokenType: "card",
-          paymentInstrument: {
-            type: "card/plain",
-            cardNumber: cardDetails.number,
-            expiryDate: { month: cardDetails.expiryMonth, year: cardDetails.expiryYear },
-            cvc: cardDetails.cvc,
-            cardHolderName: cardDetails.cardholderName,
-          },
-        },
-      } as never)) as {
-        tokenPaymentInstrument?: { href?: string }
-        paymentInstrument?: { brand?: string; last4Digits?: string }
-      }
-      return {
-        tokenHref: result.tokenPaymentInstrument?.href ?? "",
-        brand: result.paymentInstrument?.brand ?? "visa",
-        last4: result.paymentInstrument?.last4Digits ?? "1111",
-        expiryMonth: cardDetails.expiryMonth,
-        expiryYear: cardDetails.expiryYear,
-      }
+    createToken: async (cardDetails, entity) => {
+      const { tokenHref, brand, last4 } = await createCardToken(cardDetails, entity)
+      return { tokenHref, brand, last4, expiryMonth: cardDetails.expiryMonth, expiryYear: cardDetails.expiryYear }
     },
     resolveMerchant: async () => ({
       merchantId: merchant.id,

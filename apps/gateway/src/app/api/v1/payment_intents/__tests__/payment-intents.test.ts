@@ -523,9 +523,11 @@ describe("POST /api/v1/payment_intents", () => {
       expect(narrative?.line1).toBe("This is a very long desc") // 24 chars
     })
 
-    it("does not send narrative when no statement_descriptor", async () => {
+    it("always sends narrative.line1, defaulting when no statement_descriptor", async () => {
       const { wpCall } = setupDeps()
 
+      // Worldpay requires narrative on every authorization, so it falls back to
+      // the description, then a generic default.
       await makeRequest(cardRequest())
 
       const citCall = (wpCall as ReturnType<typeof vi.fn>).mock.calls.find(
@@ -533,7 +535,8 @@ describe("POST /api/v1/payment_intents", () => {
       )
       const citBody = citCall?.[2]?.body as Record<string, unknown>
       const instruction = citBody?.instruction as Record<string, unknown>
-      expect(instruction?.narrative).toBeUndefined()
+      const narrative = instruction?.narrative as Record<string, unknown>
+      expect(narrative?.line1).toBe("Payment")
     })
   })
 })

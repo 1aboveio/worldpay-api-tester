@@ -230,9 +230,8 @@ export async function handleCreatePaymentIntent(
 
   // 6. CIT Authorize
   const requestAutoSettlement = input.capture_method !== "manual"
-  const narrative = input.statement_descriptor
-    ? { line1: input.statement_descriptor.substring(0, 24) }
-    : undefined
+  // Worldpay requires narrative.line1 (max 24 chars) on every authorization.
+  const narrativeLine = (input.statement_descriptor ?? input.description ?? "Payment").substring(0, 24)
 
   const citBody: Record<string, unknown> = {
     transactionReference: piId,
@@ -245,9 +244,9 @@ export async function handleCreatePaymentIntent(
     },
     instruction: {
       requestAutoSettlement: { enabled: requestAutoSettlement },
+      narrative: { line1: narrativeLine },
       value: { amount: input.amount, currency },
-      paymentInstrument: { type: "card/tokenized", href: tokenHref },
-      ...(narrative ? { narrative } : {}),
+      paymentInstrument: { type: "card/token", href: tokenHref },
       ...(input.setup_future_usage === "off_session"
         ? {
             customerAgreement: {
