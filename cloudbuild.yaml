@@ -70,9 +70,7 @@ steps:
       - '--subnet=default'
       - '--vpc-egress=all-traffic'
       - '--set-cloudsql-instances=cosmic-heaven-479306-v5:us-central1:ai-dev'
-      # WORLDPAY_CHECKOUT_ID is the public Access Checkout (hosted fields) id. The
-      # deploy origin (this Cloud Run URL) must be allowlisted with Worldpay.
-      - '--set-env-vars=NODE_ENV=production,ALLOWED_EMAIL_DOMAIN=fmmpay.com,BETTER_AUTH_URL=https://worldpay-api-tester-dev-903828198190.us-central1.run.app,DATABASE_SSL=require,WORLDPAY_CHECKOUT_ID=29b3bcab-aa6a-40e3-a1dd-1b3ab796a8ea'
+      - '--set-env-vars=NODE_ENV=production,ALLOWED_EMAIL_DOMAIN=fmmpay.com,BETTER_AUTH_URL=https://worldpay-api-tester-dev-903828198190.us-central1.run.app,DATABASE_SSL=require'
       - '--set-secrets=DATABASE_URL=worldpay-api-tester-db-url:latest'
       - '--set-secrets=WORLDPAY_USERNAME=worldpay-api-tester-wp-username:latest'
       - '--set-secrets=WORLDPAY_PASSWORD=worldpay-api-tester-wp-password:latest'

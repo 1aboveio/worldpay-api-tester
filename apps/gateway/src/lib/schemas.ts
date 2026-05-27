@@ -25,12 +25,6 @@ const paymentMethodSchema = z.discriminatedUnion("type", [
     type: z.literal("card_token"),
     token: z.string().min(1),
   }),
-  // Hosted-fields (Worldpay Access Checkout): the browser produces a one-time
-  // session href; the raw PAN never reaches our server.
-  z.object({
-    type: z.literal("checkout_session"),
-    session_href: z.string().min(1),
-  }),
 ])
 
 const customerSchema = z

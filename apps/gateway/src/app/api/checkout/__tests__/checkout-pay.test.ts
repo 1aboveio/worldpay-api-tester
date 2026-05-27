@@ -2,9 +2,9 @@
  * Public hosted-checkout pay endpoint: POST /api/checkout/{id}/pay
  *
  * Authorization is by possession of the unguessable checkout-session id — NO
- * API key. These tests prove that, the session-state guards, and that a hosted
- * card session flows through tokenize → FraudSight → CIT authorize (the real
- * payment-intent service) using a mocked Worldpay HTTP client.
+ * API key. These tests prove that, the session-state guards, and that the card
+ * the shopper enters flows through tokenize (card/plain) → FraudSight → CIT
+ * authorize (the real payment-intent service) using a mocked Worldpay client.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest"
@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 async function defaultWorldpayImpl(path: string) {
   if (path === "/tokens") {
     return {
-      tokenPaymentInstrument: { href: "/tokens/tok_checkout_1" },
+      tokenPaymentInstrument: { href: "/tokens/tok_1" },
       paymentInstrument: { brand: "visa", last4Digits: "1111" },
     }
   }
@@ -43,6 +43,8 @@ import { resetMockStores, getMockStore } from "@repo/database"
 import { NextRequest } from "next/server"
 
 const CS_ID = "cs_test_open_1"
+
+const VALID_CARD = { number: "4444333322221111", expiry_month: 12, expiry_year: 2029, cvc: "123" }
 
 function seedMerchant() {
   getMockStore().merchants.set("m_co", {
@@ -90,8 +92,8 @@ beforeEach(() => {
 })
 
 describe("POST /api/checkout/{id}/pay", () => {
-  it("pays an open checkout with a hosted-fields session — no API key required", async () => {
-    const res = await payRequest(CS_ID, { session_href: "sess_card_abc" })
+  it("pays an open checkout with a card — no API key required", async () => {
+    const res = await payRequest(CS_ID, VALID_CARD)
     const body = await res.json()
 
     expect(res.status).toBe(200)
@@ -104,63 +106,64 @@ describe("POST /api/checkout/{id}/pay", () => {
     expect(cs?.paymentIntentId).toBe(body.id)
   })
 
-  it("tokenizes the hosted-fields session via card/checkout, not raw PAN", async () => {
-    const { worldpayRequest } = await import("@/lib/worldpay-client")
-    await payRequest(CS_ID, { session_href: "sess_card_xyz" })
+  it("tokenizes the entered card via card/plain", async () => {
+    await payRequest(CS_ID, VALID_CARD)
 
     const tokenCall = (worldpayRequest as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === "/tokens")
     expect(tokenCall).toBeTruthy()
     const tokenBody = (tokenCall![1] as { body: Record<string, unknown> }).body
     const instrument = tokenBody.paymentInstrument as Record<string, unknown>
-    expect(instrument.type).toBe("card/checkout")
-    expect(instrument.sessionHref).toBe("sess_card_xyz")
+    expect(instrument.type).toBe("card/plain")
+    expect(instrument.cardNumber).toBe("4444333322221111")
   })
 
-  it("returns 400 when session_href is missing", async () => {
-    const res = await payRequest(CS_ID, {})
+  it("returns 400 when card details are incomplete", async () => {
+    const res = await payRequest(CS_ID, { number: "4444333322221111" })
     expect(res.status).toBe(400)
     expect((await res.json()).error.code).toBe("validation_error")
   })
 
+  it("strips spaces from the entered card number", async () => {
+    await payRequest(CS_ID, { ...VALID_CARD, number: "4444 3333 2222 1111" })
+    const tokenCall = (worldpayRequest as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === "/tokens")
+    const instrument = (tokenCall![1] as { body: Record<string, unknown> }).body.paymentInstrument as Record<string, unknown>
+    expect(instrument.cardNumber).toBe("4444333322221111")
+  })
+
   it("returns 404 for an unknown checkout id", async () => {
-    const res = await payRequest("cs_does_not_exist", { session_href: "sess" })
+    const res = await payRequest("cs_does_not_exist", VALID_CARD)
     expect(res.status).toBe(404)
   })
 
   it("returns 410 for an expired checkout", async () => {
     seedCheckout({ expiresAt: new Date(Date.now() - 1000) })
-    const res = await payRequest(CS_ID, { session_href: "sess" })
+    const res = await payRequest(CS_ID, VALID_CARD)
     expect(res.status).toBe(410)
     expect((await res.json()).error.code).toBe("checkout_expired")
   })
 
   it("rejects a second payment on an already-completed checkout (single use)", async () => {
-    const first = await payRequest(CS_ID, { session_href: "sess_1" })
+    const first = await payRequest(CS_ID, VALID_CARD)
     expect(first.status).toBe(200)
 
-    const second = await payRequest(CS_ID, { session_href: "sess_2" })
+    const second = await payRequest(CS_ID, VALID_CARD)
     expect(second.status).toBe(409)
     expect((await second.json()).error.code).toBe("checkout_unavailable")
   })
 
   it("releases the session back to open when authorization is refused", async () => {
-    const { worldpayRequest } = await import("@/lib/worldpay-client")
-    ;(worldpayRequest as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => ({
-      tokenPaymentInstrument: { href: "/tokens/tok_checkout_1" },
-      paymentInstrument: { brand: "visa", last4Digits: "1111" },
-    }))
     ;(worldpayRequest as ReturnType<typeof vi.fn>).mockImplementation(async (path: string) => {
+      if (path === "/tokens") {
+        return { tokenPaymentInstrument: { href: "/tokens/tok_x" }, paymentInstrument: { brand: "visa", last4Digits: "1111" } }
+      }
       if (path === "/fraudsight/assessment") return { outcome: "lowRisk" }
       if (path === "/cardPayments/customerInitiatedTransactions") {
         return { outcome: "refused", refusal: { code: "5", description: "REFUSED" }, _links: {} }
       }
-      if (path === "/tokens") {
-        return { tokenPaymentInstrument: { href: "/tokens/tok_x" }, paymentInstrument: { brand: "visa", last4Digits: "1111" } }
-      }
       throw new Error(`Unmocked: ${path}`)
     })
 
-    const res = await payRequest(CS_ID, { session_href: "sess_refused" })
+    const res = await payRequest(CS_ID, VALID_CARD)
     const body = await res.json()
     expect(body.status).toBe("payment_failed")
 

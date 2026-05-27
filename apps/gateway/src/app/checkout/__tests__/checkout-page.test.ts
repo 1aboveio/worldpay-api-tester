@@ -43,7 +43,6 @@ const render = (id: string) => CheckoutPage({ params: Promise.resolve({ id }) })
 beforeEach(() => {
   resetMockStores()
   mockNotFound.mockClear()
-  process.env.WORLDPAY_CHECKOUT_ID = "test-checkout-id"
 })
 
 describe("public CheckoutPage", () => {

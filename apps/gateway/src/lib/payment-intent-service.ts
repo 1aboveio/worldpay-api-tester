@@ -1,5 +1,5 @@
 import { createPaymentIntentSchema, capturePaymentIntentSchema, type CreatePaymentIntentInput } from "./schemas"
-import type { WpCallFn, CreateTokenFn, CreateTokenFromSessionFn, ResolveMerchantFn } from "./worldpay-types"
+import type { WpCallFn, CreateTokenFn, ResolveMerchantFn } from "./worldpay-types"
 import {
   createPaymentIntent,
   getPaymentIntentByIdAndMerchant,
@@ -30,8 +30,6 @@ export interface PaymentIntentServiceDeps {
   wpCall: WpCallFn
   createToken: CreateTokenFn
   resolveMerchant: ResolveMerchantFn
-  /** Optional — only required for the checkout_session payment method (hosted checkout). */
-  createTokenFromSession?: CreateTokenFromSessionFn
 }
 
 export async function handleCreatePaymentIntent(
@@ -155,76 +153,6 @@ export async function handleCreatePaymentIntent(
           status: "payment_failed",
           failure_code: "tokenization_failed",
           failure_message: "Failed to tokenize card",
-          payment_method_details: { type: "card", card: maskCard(null, null) },
-        },
-        { status: 200 },
-      )
-    }
-  } else if (input.payment_method.type === "checkout_session") {
-    // Hosted checkout: exchange the one-time Access Checkout session href for a
-    // token. The raw PAN never reached us. Then fall through to the same
-    // FraudSight + CIT path as a normal card.
-    const sessionHref = input.payment_method.session_href
-    if (!deps.createTokenFromSession) {
-      await updatePaymentIntentStatus({
-        id: piId,
-        status: PaymentIntentStatus.payment_failed,
-        failureCode: "tokenization_failed",
-        failureMessage: "Hosted checkout is not configured",
-      })
-      return Response.json(
-        {
-          id: piId,
-          object: "payment_intent",
-          amount: input.amount,
-          currency,
-          status: "payment_failed",
-          failure_code: "tokenization_failed",
-          failure_message: "Hosted checkout is not configured",
-          payment_method_details: { type: "card", card: maskCard(null, null) },
-        },
-        { status: 200 },
-      )
-    }
-    try {
-      await updatePaymentIntentStatus({ id: piId, status: PaymentIntentStatus.tokenizing })
-      const tokenResult = await deps.createTokenFromSession(sessionHref, entity)
-      tokenHref = tokenResult.tokenHref
-      cardBrand = tokenResult.brand
-      cardLast4 = tokenResult.last4
-
-      const pmId = `pm_${piId.slice(3)}`
-      paymentMethodId = pmId
-      await createPaymentMethod({
-        id: pmId,
-        merchantId: merchant.merchantId,
-        type: "card",
-        tokenHref,
-        brand: cardBrand,
-        last4: cardLast4,
-      })
-
-      await updatePaymentIntentStatus({
-        id: piId,
-        status: PaymentIntentStatus.tokenized,
-        paymentMethodId,
-      })
-    } catch {
-      await updatePaymentIntentStatus({
-        id: piId,
-        status: PaymentIntentStatus.payment_failed,
-        failureCode: "tokenization_failed",
-        failureMessage: "Failed to tokenize card session (it may have expired)",
-      })
-      return Response.json(
-        {
-          id: piId,
-          object: "payment_intent",
-          amount: input.amount,
-          currency,
-          status: "payment_failed",
-          failure_code: "tokenization_failed",
-          failure_message: "Failed to tokenize card session (it may have expired)",
           payment_method_details: { type: "card", card: maskCard(null, null) },
         },
         { status: 200 },

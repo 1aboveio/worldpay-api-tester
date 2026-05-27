@@ -42,14 +42,9 @@ export default async function CheckoutPage({ params }: { params: Promise<{ id: s
     select: { name: true },
   })
 
-  const sdkBase = process.env.WORLDPAY_BASE_URL ?? "https://try.access.worldpay.com"
-  const checkoutId = process.env.WORLDPAY_CHECKOUT_ID ?? ""
-
   return (
     <CheckoutClient
       csId={cs.id}
-      checkoutId={checkoutId}
-      sdkSrc={`${sdkBase.replace(/\/$/, "")}/access-checkout/v2/checkout.js`}
       merchantName={merchant?.name ?? "Merchant"}
       amountLabel={formatAmount(cs.amount, cs.currency)}
       description={cs.description}

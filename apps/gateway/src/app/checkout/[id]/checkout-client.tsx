@@ -1,139 +1,113 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import Script from "next/script"
-
-// Worldpay Access Checkout SDK is loaded from a remote script; it attaches a
-// `Worldpay` global. We only touch the small surface we use.
-declare global {
-  interface Window {
-    Worldpay?: {
-      checkout: {
-        init: (
-          config: unknown,
-          callback: (error: unknown, checkout: WorldpayCheckout | null) => void,
-        ) => void
-      }
-    }
-  }
-}
-
-type WorldpayCheckout = {
-  generateSessions: (
-    callback: (error: unknown, sessions: { card?: string; cvv?: string }) => void,
-  ) => void
-}
+import { useCallback, useState } from "react"
 
 type Phase = "idle" | "submitting" | "succeeded" | "authorized" | "failed"
 
-const fieldShell =
-  "h-11 w-full rounded-md border border-input bg-background px-3 [&_iframe]:h-full [&_iframe]:w-full"
+// Worldpay "Try" sandbox test cards. Outcome ultimately depends on your sandbox
+// config; these are standard PANs for exercising the flow.
+const TEST_CARDS: Array<{ label: string; number: string; expiry: string; cvc: string }> = [
+  { label: "Visa", number: "4444333322221111", expiry: "12/29", cvc: "123" },
+  { label: "Mastercard", number: "5500000000000004", expiry: "12/29", cvc: "123" },
+]
+
+const inputCls =
+  "h-11 w-full rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+
+function formatPan(v: string) {
+  const digits = v.replace(/\D/g, "").slice(0, 19)
+  return digits.replace(/(.{4})/g, "$1 ").trim()
+}
+
+function formatExpiry(v: string) {
+  const digits = v.replace(/\D/g, "").slice(0, 4)
+  return digits.length <= 2 ? digits : `${digits.slice(0, 2)}/${digits.slice(2)}`
+}
 
 export function CheckoutClient({
   csId,
-  checkoutId,
-  sdkSrc,
   merchantName,
   amountLabel,
   description,
 }: {
   csId: string
-  checkoutId: string
-  sdkSrc: string
   merchantName: string
   amountLabel: string
   description: string | null
 }) {
-  const [scriptReady, setScriptReady] = useState(false)
-  const [fieldsReady, setFieldsReady] = useState(false)
+  const [pan, setPan] = useState("")
+  const [expiry, setExpiry] = useState("")
+  const [cvc, setCvc] = useState("")
   const [phase, setPhase] = useState<Phase>("idle")
   const [message, setMessage] = useState<string | null>(null)
-  const checkoutRef = useRef<WorldpayCheckout | null>(null)
 
-  // Initialize the hosted fields once the SDK script has loaded and the target
-  // DOM nodes exist (after mount). Guard against double-init.
-  useEffect(() => {
-    if (!scriptReady || checkoutRef.current || !checkoutId) return
-    const wp = window.Worldpay
-    if (!wp) return
-
-    wp.checkout.init(
-      {
-        id: checkoutId,
-        form: "#card-form",
-        fields: {
-          pan: { selector: "#card-pan", placeholder: "Card number" },
-          expiry: { selector: "#card-expiry", placeholder: "MM/YY" },
-          cvv: { selector: "#card-cvv", placeholder: "CVC" },
-        },
-      },
-      (error, checkout) => {
-        if (error || !checkout) {
-          setMessage("Could not load the secure card fields. Please refresh and try again.")
-          return
-        }
-        checkoutRef.current = checkout
-        setFieldsReady(true)
-      },
-    )
-  }, [scriptReady, checkoutId])
+  function applyTestCard(c: (typeof TEST_CARDS)[number]) {
+    setPan(formatPan(c.number))
+    setExpiry(c.expiry)
+    setCvc(c.cvc)
+    setMessage(null)
+  }
 
   const onSubmit = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault()
-      const checkout = checkoutRef.current
-      if (!checkout || phase === "submitting") return
+      if (phase === "submitting") return
+
+      const digits = pan.replace(/\D/g, "")
+      const [mm, yy] = expiry.split("/")
+      const month = Number(mm)
+      // Accept 2- or 4-digit year.
+      const year = yy && yy.length === 2 ? 2000 + Number(yy) : Number(yy)
+
+      if (digits.length < 12 || !month || !year || cvc.length < 3) {
+        setPhase("failed")
+        setMessage("Please enter a valid card number, expiry (MM/YY) and CVC.")
+        return
+      }
 
       setPhase("submitting")
       setMessage(null)
-
-      checkout.generateSessions(async (error, sessions) => {
-        if (error || !sessions?.card) {
-          setPhase("failed")
-          setMessage("Please check your card details and try again.")
-          return
+      try {
+        const res = await fetch(`/api/checkout/${csId}/pay`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            number: digits,
+            expiry_month: month,
+            expiry_year: year,
+            cvc,
+          }),
+        })
+        const data = (await res.json().catch(() => ({}))) as {
+          status?: string
+          failure_message?: string
+          error?: { message?: string }
         }
-        try {
-          const res = await fetch(`/api/checkout/${csId}/pay`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ session_href: sessions.card }),
-          })
-          const data = (await res.json().catch(() => ({}))) as {
-            status?: string
-            failure_message?: string
-            error?: { message?: string }
-          }
 
-          if (data.status === "succeeded") {
-            setPhase("succeeded")
-            setMessage(null)
-          } else if (data.status === "requires_capture") {
-            setPhase("authorized")
-            setMessage(null)
-          } else {
-            setPhase("failed")
-            setMessage(
-              data.failure_message ??
-                data.error?.message ??
-                "Your payment could not be completed. Please try again.",
-            )
-          }
-        } catch {
+        if (data.status === "succeeded") {
+          setPhase("succeeded")
+        } else if (data.status === "requires_capture") {
+          setPhase("authorized")
+        } else {
           setPhase("failed")
-          setMessage("Something went wrong. Please try again.")
+          setMessage(
+            data.failure_message ??
+              data.error?.message ??
+              "Your payment could not be completed. Please try again.",
+          )
         }
-      })
+      } catch {
+        setPhase("failed")
+        setMessage("Something went wrong. Please try again.")
+      }
     },
-    [csId, phase],
+    [csId, pan, expiry, cvc, phase],
   )
 
   const done = phase === "succeeded" || phase === "authorized"
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Script src={sdkSrc} strategy="afterInteractive" onLoad={() => setScriptReady(true)} />
-
       <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-sm ring-1 ring-foreground/10">
         {/* Order summary */}
         <div className="mb-6 border-b pb-4">
@@ -155,30 +129,63 @@ export function CheckoutClient({
             </p>
           </div>
         ) : (
-          <form id="card-form" onSubmit={onSubmit} className="flex flex-col gap-3">
-            {!checkoutId && (
-              <p className="rounded-md bg-amber-100 px-3 py-2 text-sm text-amber-800">
-                Hosted checkout is not configured (missing WORLDPAY_CHECKOUT_ID).
-              </p>
-            )}
+          <form onSubmit={onSubmit} className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Quick fill:</span>
+              {TEST_CARDS.map((c) => (
+                <button
+                  key={c.label}
+                  type="button"
+                  onClick={() => applyTestCard(c)}
+                  className="rounded-md border border-input bg-background px-2 py-1 text-xs hover:bg-accent"
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
 
-            <label className="text-sm font-medium" htmlFor="card-pan">
+            <label className="text-sm font-medium" htmlFor="pan">
               Card number
             </label>
-            <div id="card-pan" className={fieldShell} />
+            <input
+              id="pan"
+              inputMode="numeric"
+              autoComplete="cc-number"
+              placeholder="4444 3333 2222 1111"
+              className={inputCls}
+              value={pan}
+              onChange={(e) => setPan(formatPan(e.target.value))}
+            />
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium" htmlFor="card-expiry">
+                <label className="text-sm font-medium" htmlFor="expiry">
                   Expiry
                 </label>
-                <div id="card-expiry" className={fieldShell} />
+                <input
+                  id="expiry"
+                  inputMode="numeric"
+                  autoComplete="cc-exp"
+                  placeholder="MM/YY"
+                  className={inputCls}
+                  value={expiry}
+                  onChange={(e) => setExpiry(formatExpiry(e.target.value))}
+                />
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium" htmlFor="card-cvv">
+                <label className="text-sm font-medium" htmlFor="cvc">
                   CVC
                 </label>
-                <div id="card-cvv" className={fieldShell} />
+                <input
+                  id="cvc"
+                  inputMode="numeric"
+                  autoComplete="cc-csc"
+                  placeholder="123"
+                  maxLength={4}
+                  className={inputCls}
+                  value={cvc}
+                  onChange={(e) => setCvc(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                />
               </div>
             </div>
 
@@ -186,18 +193,14 @@ export function CheckoutClient({
 
             <button
               type="submit"
-              disabled={!fieldsReady || phase === "submitting"}
+              disabled={phase === "submitting"}
               className="mt-2 inline-flex h-11 items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
             >
-              {phase === "submitting"
-                ? "Processing…"
-                : fieldsReady
-                  ? `Pay ${amountLabel}`
-                  : "Loading secure fields…"}
+              {phase === "submitting" ? "Processing…" : `Pay ${amountLabel}`}
             </button>
 
             <p className="mt-1 text-center text-xs text-muted-foreground">
-              Secured by Worldpay · card details never touch this site
+              Sandbox checkout · use a Worldpay test card
             </p>
           </form>
         )}

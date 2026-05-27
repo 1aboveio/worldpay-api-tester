@@ -13,16 +13,25 @@ import {
  * Public pay endpoint for a hosted checkout. NO API key — authorized solely by
  * possession of the unguessable checkout-session id. All financial details
  * (amount, currency, capture method, merchant) are read from the session row;
- * the request body carries only the one-time hosted-fields session href.
+ * the request body carries only the card the shopper entered.
+ *
+ * The card is tokenized server-side via the existing card/plain Tokens flow,
+ * then runs the same FraudSight -> CIT authorize path as the JSON API.
  */
 export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params
 
-  const body = (await request.json().catch(() => null)) as { session_href?: unknown } | null
-  const sessionHref = typeof body?.session_href === "string" ? body.session_href : ""
-  if (!sessionHref) {
+  const raw = (await request.json().catch(() => null)) as Record<string, unknown> | null
+  const card = {
+    number: typeof raw?.number === "string" ? raw.number.replace(/\s+/g, "") : "",
+    expiry_month: Number(raw?.expiry_month),
+    expiry_year: Number(raw?.expiry_year),
+    cvc: typeof raw?.cvc === "string" ? raw.cvc : "",
+    cardholder_name: typeof raw?.cardholder_name === "string" ? raw.cardholder_name : undefined,
+  }
+  if (!card.number || !card.cvc || !card.expiry_month || !card.expiry_year) {
     return Response.json(
-      { error: { code: "validation_error", message: "session_href is required" } },
+      { error: { code: "validation_error", message: "Card details are incomplete" } },
       { status: 400 },
     )
   }
@@ -70,16 +79,19 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         body: options?.body,
       } as never)
     }) as PaymentIntentServiceDeps["wpCall"],
-    createToken: (async () => {
-      throw new Error("raw card tokenization is not used by hosted checkout")
-    }) as PaymentIntentServiceDeps["createToken"],
-    createTokenFromSession: async (href: string) => {
+    createToken: async (cardDetails) => {
       const result = (await worldpayRequest("/tokens", {
         method: "POST",
         mediaType: MediaTypes.TOKENS,
         body: {
           tokenType: "card",
-          paymentInstrument: { type: "card/checkout", sessionHref: href },
+          paymentInstrument: {
+            type: "card/plain",
+            cardNumber: cardDetails.number,
+            expiryDate: { month: cardDetails.expiryMonth, year: cardDetails.expiryYear },
+            cvc: cardDetails.cvc,
+            cardHolderName: cardDetails.cardholderName,
+          },
         },
       } as never)) as {
         tokenPaymentInstrument?: { href?: string }
@@ -89,6 +101,8 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
         tokenHref: result.tokenPaymentInstrument?.href ?? "",
         brand: result.paymentInstrument?.brand ?? "visa",
         last4: result.paymentInstrument?.last4Digits ?? "1111",
+        expiryMonth: cardDetails.expiryMonth,
+        expiryYear: cardDetails.expiryYear,
       }
     },
     resolveMerchant: async () => ({
@@ -104,7 +118,16 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   const piBody = {
     amount: cs.amount,
     currency: cs.currency,
-    payment_method: { type: "checkout_session" as const, session_href: sessionHref },
+    payment_method: {
+      type: "card" as const,
+      card: {
+        number: card.number,
+        expiry_month: card.expiry_month,
+        expiry_year: card.expiry_year,
+        cvc: card.cvc,
+        ...(card.cardholder_name ? { cardholder_name: card.cardholder_name } : {}),
+      },
+    },
     capture_method: cs.captureMethod,
   }
 
