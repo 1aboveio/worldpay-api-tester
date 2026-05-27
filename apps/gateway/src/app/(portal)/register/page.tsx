@@ -2,7 +2,7 @@
 
 import { useActionState } from "react"
 import { registerAction } from "@/app/(portal)/auth-actions"
-import type { ActionResult } from "@/app/(portal)/auth-actions"
+import type { ActionResult } from "@/app/(portal)/auth-schemas"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"

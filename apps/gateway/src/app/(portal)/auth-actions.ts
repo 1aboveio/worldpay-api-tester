@@ -1,34 +1,15 @@
 "use server"
 
-import { z } from "zod"
 import { auth } from "@/lib/auth"
 import { database } from "@repo/database"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { getSession } from "@/lib/auth-server"
+import { loginSchema, registerSchema, type ActionResult } from "./auth-schemas"
 
-// ─── Schemas ───────────────────────────────────────────────────
-
-export const loginSchema = z.object({
-  email: z.string().email("Valid email required"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-})
-
-export const registerSchema = z.object({
-  email: z.string().email("Valid email required"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  name: z.string().min(1, "Name is required"),
-})
-
-// ─── Action Result ─────────────────────────────────────────────
-
-export type ActionResult<T = unknown> = {
-  success: boolean
-  data?: T
-  error?: { code: string; message: string; fieldErrors?: Record<string, string[]> }
+function isFmmpayEmail(email: string): boolean {
+  return email.toLowerCase().endsWith("@fmmpay.com")
 }
-
-// ─── Login ─────────────────────────────────────────────────────
 
 export async function loginAction(
   _prevState: ActionResult | null,
@@ -63,13 +44,7 @@ export async function loginAction(
     return { success: false, error: { code: "AUTH_ERROR", message: "Invalid email or password." } }
   }
 
-  redirect("/portal/dashboard")
-}
-
-// ─── Register ──────────────────────────────────────────────────
-
-function isFmmpayEmail(email: string): boolean {
-  return email.toLowerCase().endsWith("@fmmpay.com")
+  redirect("/dashboard")
 }
 
 export async function registerAction(
@@ -93,18 +68,13 @@ export async function registerAction(
   const isPlatformAdmin = isFmmpayEmail(email)
 
   try {
-    // Check if user already exists
     const existing = await database.user.findUnique({ where: { email } })
     if (existing) {
       return { success: false, error: { code: "CONFLICT", message: "An account with this email already exists." } }
     }
 
     const result = await auth.api.signUpEmail({
-      body: {
-        email,
-        password,
-        name,
-      },
+      body: { email, password, name },
       headers: await headers(),
     })
 
@@ -114,47 +84,34 @@ export async function registerAction(
 
     const userId = result.user.id
 
-    // Assign merchant roles based on email domain
     if (isPlatformAdmin) {
-      // @fmmpay.com → platform_admin for ALL merchants
       const allMerchants = await database.merchant.findMany()
       for (const merchant of allMerchants) {
         await database.userMerchant.create({
-          data: {
-            userId,
-            merchantId: merchant.id as string,
-            role: "platform_admin",
-          },
+          data: { userId, merchantId: merchant.id as string, role: "platform_admin" },
         })
       }
     } else {
-      // Non-fmmpay → assign to specific merchant(s)
-      // For now, assign to the first merchant as default
       const firstMerchant = await database.merchant.findFirst()
       if (firstMerchant) {
         await database.userMerchant.create({
-          data: {
-            userId,
-            merchantId: firstMerchant.id as string,
-            role: "merchant",
-          },
+          data: { userId, merchantId: firstMerchant.id as string, role: "merchant" },
         })
       }
     }
   } catch (err) {
     console.error("Registration error:", err)
-    return { success: false, error: { code: "INTERNAL_ERROR", message: "Registration failed. Please try again." } }
+    return { success: false, error: { code: "INTERNAL_ERROR", message: "Registration failed." } }
   }
 
-  redirect("/portal/dashboard")
+  redirect("/dashboard")
 }
 
-// ─── Logout ────────────────────────────────────────────────────
-
 export async function logoutAction() {
-  "use server"
-  await auth.api.signOut({
-    headers: await headers(),
-  })
+  await auth.api.signOut({ headers: await headers() })
   redirect("/login")
+}
+
+export async function getPortalSession() {
+  return getSession()
 }

@@ -1,5 +1,3 @@
-"use server"
-
 import "server-only"
 import { auth } from "./auth"
 import { headers } from "next/headers"
