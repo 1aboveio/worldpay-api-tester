@@ -100,6 +100,7 @@ jobs:
         run: pnpm --filter @apps/gateway build
         env:
           DATABASE_URL: postgres://worldpay:worldpay@localhost:5432/worldpay
+          BETTER_AUTH_SECRET: ci-test-secret-at-least-32-chars-long
 
       - name: Copy static assets for standalone
         run: |
