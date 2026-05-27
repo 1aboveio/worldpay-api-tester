@@ -4,11 +4,12 @@ import { useCallback, useState } from "react"
 
 type Phase = "idle" | "submitting" | "succeeded" | "authorized" | "failed"
 
-// Worldpay "Try" sandbox test cards. Outcome ultimately depends on your sandbox
-// config; these are standard PANs for exercising the flow.
-const TEST_CARDS: Array<{ label: string; number: string; expiry: string; cvc: string }> = [
-  { label: "Visa", number: "4444333322221111", expiry: "12/29", cvc: "123" },
-  { label: "Mastercard", number: "5500000000000004", expiry: "12/29", cvc: "123" },
+// Worldpay "Try" sandbox simulates the outcome from the cardholder name magic
+// value (AUTHORISED / REFUSED). Each preset uses a distinct card so it gets its
+// own token carrying that name.
+const TEST_CARDS: Array<{ label: string; number: string; expiry: string; cvc: string; name: string }> = [
+  { label: "Approve", number: "4917610000000000", expiry: "12/29", cvc: "123", name: "AUTHORISED" },
+  { label: "Decline", number: "5454545454545454", expiry: "12/29", cvc: "123", name: "REFUSED" },
 ]
 
 const inputCls =
@@ -38,6 +39,7 @@ export function CheckoutClient({
   const [pan, setPan] = useState("")
   const [expiry, setExpiry] = useState("")
   const [cvc, setCvc] = useState("")
+  const [name, setName] = useState("")
   const [phase, setPhase] = useState<Phase>("idle")
   const [message, setMessage] = useState<string | null>(null)
 
@@ -45,6 +47,7 @@ export function CheckoutClient({
     setPan(formatPan(c.number))
     setExpiry(c.expiry)
     setCvc(c.cvc)
+    setName(c.name)
     setMessage(null)
   }
 
@@ -56,7 +59,6 @@ export function CheckoutClient({
       const digits = pan.replace(/\D/g, "")
       const [mm, yy] = expiry.split("/")
       const month = Number(mm)
-      // Accept 2- or 4-digit year.
       const year = yy && yy.length === 2 ? 2000 + Number(yy) : Number(yy)
 
       if (digits.length < 12 || !month || !year || cvc.length < 3) {
@@ -76,6 +78,7 @@ export function CheckoutClient({
             expiry_month: month,
             expiry_year: year,
             cvc,
+            cardholder_name: name || undefined,
           }),
         })
         const data = (await res.json().catch(() => ({}))) as {
@@ -101,7 +104,7 @@ export function CheckoutClient({
         setMessage("Something went wrong. Please try again.")
       }
     },
-    [csId, pan, expiry, cvc, phase],
+    [csId, pan, expiry, cvc, name, phase],
   )
 
   const done = phase === "succeeded" || phase === "authorized"
@@ -143,6 +146,18 @@ export function CheckoutClient({
                 </button>
               ))}
             </div>
+
+            <label className="text-sm font-medium" htmlFor="name">
+              Name on card
+            </label>
+            <input
+              id="name"
+              autoComplete="cc-name"
+              placeholder="Name on card"
+              className={inputCls}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
 
             <label className="text-sm font-medium" htmlFor="pan">
               Card number

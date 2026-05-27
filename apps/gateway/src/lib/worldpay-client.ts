@@ -12,7 +12,9 @@
 const BASE_URL = process.env.WORLDPAY_BASE_URL ?? "https://try.access.worldpay.com"
 const USERNAME = process.env.WORLDPAY_USERNAME ?? ""
 const PASSWORD = process.env.WORLDPAY_PASSWORD ?? ""
-const TIMEOUT_MS = 10_000
+// 10s was too tight for the sandbox — a mid-authorize abort risks the payment
+// settling at Worldpay while we record a failure (and the shopper retries).
+const TIMEOUT_MS = 30_000
 
 // ---- Media types per API group -------------------------------------------
 

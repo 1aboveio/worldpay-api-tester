@@ -290,6 +290,31 @@ describe("POST /api/v1/payment_intents", () => {
     })
   })
 
+  // ── Real Worldpay outcome strings ──
+  describe("Worldpay outcome normalization", () => {
+    it("treats 'Sent for Settlement' (human-readable) as success and reads paymentId", async () => {
+      setupDeps({
+        wpCall: vi.fn(async (path: string) => {
+          if (path === "/fraudsight/assessment") return makeFraudSightPass()
+          if (path === "/cardPayments/customerInitiatedTransactions") {
+            // Worldpay returns spaced outcome + top-level paymentId (not payment.id).
+            return { outcome: "Sent for Settlement", paymentId: "payId123", scheme: { reference: "REF" }, _links: {} }
+          }
+          throw new Error(`Unmocked: ${path}`)
+        }),
+      })
+
+      const res = await makeRequest(cardRequest())
+      const body = await jsonBody(res)
+      expect(res.status).toBe(200)
+      expect(body.status).toBe("succeeded")
+
+      const pi = getMockStore().paymentIntents.get(body.id)
+      expect(pi?.status).toBe("succeeded")
+      expect(pi?.worldpayPaymentId).toBe("payId123")
+    })
+  })
+
   // ── AC2: Card token CIT → succeeded ──
   describe("AC2: Card token CIT → succeeded", () => {
     it("returns 200 with status:succeeded for card_token payment", async () => {

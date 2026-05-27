@@ -269,17 +269,23 @@ export async function handleCreatePaymentIntent(
       { body: citBody },
     )) as {
       outcome?: string
+      paymentId?: string
       payment?: { id?: string }
       scheme?: { reference?: string }
       _links?: Record<string, unknown>
       refusal?: { code?: string; description?: string }
     }
 
-    if (citResult.outcome === "authorized" || citResult.outcome === "sentForSettlement") {
+    // Worldpay returns human-readable outcomes (e.g. "Sent for Settlement"),
+    // not the camelCase forms the mocks use — normalize before comparing.
+    const outcome = (citResult.outcome ?? "").toLowerCase().replace(/\s+/g, "")
+    const worldpayPaymentId = citResult.paymentId ?? citResult.payment?.id ?? null
+
+    if (outcome === "authorized" || outcome === "sentforsettlement") {
       await updatePaymentIntentStatus({
         id: piId,
         status: input.capture_method === "manual" ? PaymentIntentStatus.requires_capture : PaymentIntentStatus.succeeded,
-        worldpayPaymentId: citResult.payment?.id ?? null,
+        worldpayPaymentId,
         schemeReference: citResult.scheme?.reference?.trim() ?? null,
         linkData: (citResult._links as Record<string, unknown>) ?? null,
       })
@@ -303,7 +309,7 @@ export async function handleCreatePaymentIntent(
     await updatePaymentIntentStatus({
       id: piId,
       status: PaymentIntentStatus.payment_failed,
-      worldpayPaymentId: citResult.payment?.id ?? null,
+      worldpayPaymentId,
       failureCode: citResult.refusal?.code ?? "refused",
       failureMessage: citResult.refusal?.description ?? "Payment refused",
     })
