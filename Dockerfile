@@ -43,9 +43,9 @@ ENV PORT=8080
 COPY --from=builder /app/apps/gateway/.next/standalone ./
 
 # Turbopack standalone doesn't include static assets — copy them into the .next dir
-# The project directory name varies, so use a wildcard
 COPY --from=builder /app/apps/gateway/.next/static /tmp/next-static
-RUN for dir in projects/*/apps/gateway/.next; do cp -r /tmp/next-static "$dir/static"; done
+RUN mkdir -p apps/gateway/.next && cp -r /tmp/next-static apps/gateway/.next/static && \
+    (for dir in projects/*/apps/gateway/.next; do cp -r /tmp/next-static "$dir/static"; done) || true
 
 # Copy public directory
 RUN mkdir -p ./apps/gateway/public

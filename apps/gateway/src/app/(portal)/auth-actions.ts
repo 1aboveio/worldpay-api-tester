@@ -5,11 +5,10 @@ import { database } from "@repo/database"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { getSession } from "@/lib/auth-server"
-import { loginSchema, registerSchema, type ActionResult } from "./auth-schemas"
+import { loginSchema, registerSchema, type ActionResult, isAllowedEmail } from "./auth-schemas"
 
 function isFmmpayEmail(email: string): boolean {
-  const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN || "fmmpay.com"
-  return email.toLowerCase().endsWith(`@${allowedDomain}`)
+  return isAllowedEmail(email)
 }
 
 export async function loginAction(

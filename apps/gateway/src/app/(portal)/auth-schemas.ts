@@ -16,3 +16,8 @@ export type ActionResult<T = unknown> = {
   data?: T
   error?: { code: string; message: string; fieldErrors?: Record<string, string[]> }
 }
+
+export function isAllowedEmail(email: string): boolean {
+  const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN || "fmmpay.com"
+  return email.toLowerCase().endsWith(`@${allowedDomain}`)
+}

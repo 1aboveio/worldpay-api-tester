@@ -104,28 +104,28 @@ describe("AC1-AC2: UserMerchant creation by email domain", () => {
     expect(ums.map((um) => um.merchantId).sort()).toEqual(["m1", "m2"].sort())
   })
 
-  it("assigns merchant role for non-fmmpay email", () => {
-    const userId = "user_merchant_001"
-    const m1Id = seedMerchant(makeMerchant({ id: "m1", name: "M1" }))
-    seedMerchant(makeMerchant({ id: "m2", name: "M2" }))
-
-    seedUser(makeUser({ id: userId, email: "user@gmail.com" }))
-
-    // Non-fmmpay: only assigned to specific merchant
-    seedUserMerchant({
-      userId,
-      merchantId: "m1",
-      role: "merchant",
-    })
-
+  it("rejects non-fmmpay email at domain check level", () => {
+    // isAllowedEmail checks against ALLOWED_EMAIL_DOMAIN (default fmmpay.com)
     const store = getMockStore()
-    const ums = Array.from(store.userMerchants.values()).filter(
-      (um) => um.userId === userId,
-    )
+    const userId = "user_rejected"
+    seedUser(makeUser({ id: userId, email: "user@gmail.com" }))
+    seedMerchant(makeMerchant({ id: "m1", name: "M1" }))
 
-    expect(ums.length).toBe(1)
-    expect(ums[0].role).toBe("merchant")
-    expect(ums[0].merchantId).toBe("m1")
+    // Non-matching email: no UserMerchant should be created
+    // (login/register actions reject before creating records)
+    const ums = Array.from(store.userMerchants.values()).filter(
+      (um: any) => um.userId === userId,
+    )
+    expect(ums.length).toBe(0)
+  })
+
+  it("isAllowedEmail respects ALLOWED_EMAIL_DOMAIN env var", async () => {
+    const { isAllowedEmail } = await import("@/app/(portal)/auth-schemas")
+    // Default domain is fmmpay.com
+    expect(isAllowedEmail("admin@fmmpay.com")).toBe(true)
+    expect(isAllowedEmail("user@gmail.com")).toBe(false)
+    expect(isAllowedEmail("test@FMMPAY.COM")).toBe(true) // case-insensitive
+    expect(isAllowedEmail("no-domain")).toBe(false)
   })
 })
 

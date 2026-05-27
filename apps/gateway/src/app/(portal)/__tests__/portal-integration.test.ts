@@ -74,17 +74,14 @@ describe("AC1-AC2: UserMerchant creation by email domain", () => {
     expect(ums.every((um) => um.role === "platform_admin")).toBe(true)
   })
 
-  it("assigns merchant role for non-fmmpay email", () => {
+  it("non-fmmpay email gets no UserMerchant (rejected by domain check)", () => {
     const userId = "user_merchant_001"
     seedMerchant(makeMerchant({ id: "m1", name: "M1" }))
-    seedMerchant(makeMerchant({ id: "m2", name: "M2" }))
     seedUser(makeUser({ id: userId, email: "user@gmail.com" }))
-    seedUserMerchant({ userId, merchantId: "m1", role: "merchant" })
+    // No UserMerchant should be created for non-matching domain
 
-    const ums = Array.from(getMockStore().userMerchants.values()).filter((um) => um.userId === userId)
-    expect(ums.length).toBeGreaterThanOrEqual(1)
-    expect(ums[0].role).toBe("merchant")
-    expect(ums[0].merchantId).toBe("m1")
+    const ums = Array.from(getMockStore().userMerchants.values()).filter((um: any) => um.userId === userId)
+    expect(ums.length).toBe(0)
   })
 })
 

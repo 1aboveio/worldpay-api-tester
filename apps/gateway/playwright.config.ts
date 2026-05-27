@@ -9,7 +9,7 @@ export default defineConfig({
     headless: true,
   },
   webServer: process.env.CI ? undefined : {
-    command: "PORT=3003 BETTER_AUTH_SECRET=test-secret-at-least-32-chars-long BETTER_AUTH_URL=http://localhost:3003 node .next/standalone/apps/gateway/server.js",
+    command: "PORT=3003 BETTER_AUTH_SECRET=test-secret-at-least-32-chars-long BETTER_AUTH_URL=http://localhost:3003 node .next/standalone/projects/worldpay-api-tester/apps/gateway/server.js",
     port: 3003,
     reuseExistingServer: true,
   },
