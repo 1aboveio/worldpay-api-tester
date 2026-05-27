@@ -105,9 +105,8 @@ jobs:
       - name: Copy static assets for standalone
         run: |
           cd apps/gateway
-          for dir in .next/standalone/projects/*/apps/gateway/.next; do
-            cp -r .next/static "$dir/static"
-          done
+          mkdir -p .next/standalone/projects/worldpay-api-tester/apps/gateway/.next
+          cp -r .next/static .next/standalone/projects/worldpay-api-tester/apps/gateway/.next/static
 
       - name: Install Playwright browsers
         run: cd apps/gateway && npx playwright install chromium --with-deps
@@ -119,7 +118,7 @@ jobs:
           DATABASE_URL="postgres://worldpay:worldpay@localhost:5432/worldpay" \
           BETTER_AUTH_SECRET="ci-test-secret-at-least-32-chars-long!!" \
           BETTER_AUTH_URL="http://localhost:3003" \
-          node .next/standalone/projects/*/apps/gateway/server.js &
+          node .next/standalone/projects/worldpay-api-tester/apps/gateway/server.js &
           sleep 5
           npx playwright test --config=playwright.config.ts
         env:
