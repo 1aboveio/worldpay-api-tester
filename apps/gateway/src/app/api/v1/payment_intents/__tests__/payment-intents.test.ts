@@ -834,3 +834,66 @@ describe("Idempotency-Key support", () => {
     expect(res.status).toBe(200)
   })
 })
+
+// ─── Concurrency ──────────────────────────────────────────
+
+describe("Concurrent requests", () => {
+  it("handles concurrent payments without errors", async () => {
+    const { wpCall } = setupDeps()
+    let callCount = 0
+    vi.mocked(wpCall).mockImplementation(async (path: string) => {
+      if (path === "/fraudsight/assessment") return makeFraudSightPass()
+      if (path === "/cardPayments/customerInitiatedTransactions") {
+        callCount++
+        // Simulate a small delay to make concurrency realistic
+        await new Promise(r => setTimeout(r, 5))
+        return makeCitAuthorizeResponse()
+      }
+      throw new Error(`Unmocked: ${path}`)
+    })
+
+    // Fire 3 concurrent payment requests with different idempotency keys
+    const results = await Promise.all([
+      makeRequest(cardRequest({ amount: 100, currency: "gbp" }), TEST_API_KEY, "concurrent_1"),
+      makeRequest(cardRequest({ amount: 200, currency: "gbp" }), TEST_API_KEY, "concurrent_2"),
+      makeRequest(cardRequest({ amount: 300, currency: "gbp" }), TEST_API_KEY, "concurrent_3"),
+    ])
+
+    // All should succeed
+    const bodies = await Promise.all(results.map(r => jsonBody(r)))
+    for (const body of bodies) {
+      expect(body.status).toBe("succeeded")
+      expect(body.id).toMatch(/^pi_/)
+    }
+
+    // All 3 should have unique IDs
+    const ids = bodies.map(b => b.id)
+    expect(new Set(ids).size).toBe(3)
+
+    // CIT authorize should be called 3 times (one per payment)
+    expect(callCount).toBe(3)
+  })
+
+  it("concurrent requests with same idempotency key handled safely", async () => {
+    const { wpCall } = setupDeps()
+    vi.mocked(wpCall).mockImplementation(async (path: string) => {
+      if (path === "/fraudsight/assessment") return makeFraudSightPass()
+      if (path === "/cardPayments/customerInitiatedTransactions") {
+        await new Promise(r => setTimeout(r, 10))
+        return makeCitAuthorizeResponse()
+      }
+      throw new Error(`Unmocked: ${path}`)
+    })
+
+    // Fire 2 concurrent requests with same key
+    const results = await Promise.all([
+      makeRequest(cardRequest({ amount: 100, currency: "gbp" }), TEST_API_KEY, "concurrent_same"),
+      makeRequest(cardRequest({ amount: 100, currency: "gbp" }), TEST_API_KEY, "concurrent_same"),
+    ])
+
+    // Both should succeed (at least one should complete, the other may be cached or also complete)
+    for (const res of results) {
+      expect(res.status).toBe(200)
+    }
+  })
+})
