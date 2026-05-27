@@ -6,6 +6,46 @@ import {
 } from "@payfac/gateway-core";
 import { getPaymentIntentByIdAndMerchant, updatePaymentIntentStatus } from "@repo/dal";
 import { getWorldpayClient } from "@/lib/worldpay";
+import type { IWorldpayClient } from "@payfac/worldpay-client";
+
+interface DeviceDataDeps {
+  getWorldpayClient: () => IWorldpayClient;
+  getPaymentIntentByIdAndMerchant: typeof getPaymentIntentByIdAndMerchant;
+  runThreeDSFlow: typeof runThreeDSFlow;
+  authorizeWithThreeDS: typeof authorizeWithThreeDS;
+  updatePaymentIntentStatus: typeof updatePaymentIntentStatus;
+}
+
+const defaultDeps: DeviceDataDeps = {
+  getWorldpayClient: () => {
+    // Defer to the actual module in production
+    const mod = require("@/lib/worldpay");
+    return mod.getWorldpayClient();
+  },
+  getPaymentIntentByIdAndMerchant,
+  runThreeDSFlow,
+  authorizeWithThreeDS,
+  updatePaymentIntentStatus,
+};
+
+let overrides: Partial<DeviceDataDeps> | null = null;
+
+export function __setDeps(deps: Partial<DeviceDataDeps>) {
+  overrides = deps;
+}
+
+export function __resetDeps() {
+  overrides = null;
+}
+
+function getDeps(): DeviceDataDeps {
+  if (overrides) {
+    return { ...defaultDeps, ...overrides };
+  }
+  // Production path: use real getWorldpayClient
+  const { getWorldpayClient: realGetWp } = require("@/lib/worldpay");
+  return { ...defaultDeps, getWorldpayClient: realGetWp };
+}
 
 export async function POST(
   request: NextRequest,
@@ -26,8 +66,10 @@ export async function POST(
 
     const { collection_reference, accept_header, user_agent } = parsed.data;
 
+    const deps = getDeps();
+
     // Look up PaymentIntent
-    const pi = await getPaymentIntentByIdAndMerchant(paymentIntentId);
+    const pi = await deps.getPaymentIntentByIdAndMerchant(paymentIntentId);
     if (!pi) {
       return NextResponse.json(
         { error: { code: "not_found", message: "PaymentIntent not found" } },
@@ -47,10 +89,10 @@ export async function POST(
       );
     }
 
-    const wpClient = getWorldpayClient();
+    const wpClient = deps.getWorldpayClient();
 
     // Run 3DS flow starting from authenticate (DDC already done)
-    const threeDSResult = await runThreeDSFlow({
+    const threeDSResult = await deps.runThreeDSFlow({
       worldpayClient: wpClient,
       paymentIntentId,
       worldpayEntity: pi.merchant.worldpayEntity,
@@ -68,7 +110,7 @@ export async function POST(
 
     switch (threeDSResult.type) {
       case "requires_action": {
-        await updatePaymentIntentStatus(paymentIntentId, "requires_action");
+        await deps.updatePaymentIntentStatus(paymentIntentId, "requires_action");
         return NextResponse.json(
           {
             id: paymentIntentId,
@@ -88,7 +130,7 @@ export async function POST(
       }
 
       case "payment_failed": {
-        await updatePaymentIntentStatus(paymentIntentId, "payment_failed", {
+        await deps.updatePaymentIntentStatus(paymentIntentId, "payment_failed", {
           failureCode: threeDSResult.failureCode,
         });
         return NextResponse.json(
@@ -106,7 +148,7 @@ export async function POST(
       }
 
       case "continue_to_authorize": {
-        const authResult = await authorizeWithThreeDS({
+        const authResult = await deps.authorizeWithThreeDS({
           worldpayClient: wpClient,
           paymentIntentId,
           worldpayEntity: pi.merchant.worldpayEntity,
@@ -151,6 +193,7 @@ export async function POST(
 
       // device_data endpoint should not get requires_device_data (we just submitted it)
       case "requires_device_data":
+        await deps.updatePaymentIntentStatus(paymentIntentId, "requires_device_data");
         return NextResponse.json(
           {
             id: paymentIntentId,

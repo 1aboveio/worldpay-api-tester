@@ -2,6 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleChallengeCallback } from "@payfac/gateway-core";
 import { getPaymentIntentByIdAndMerchant } from "@repo/dal";
 import { getWorldpayClient } from "@/lib/worldpay";
+import type { IWorldpayClient } from "@payfac/worldpay-client";
+
+interface CallbackDeps {
+  getWorldpayClient: () => IWorldpayClient;
+  getPaymentIntentByIdAndMerchant: typeof getPaymentIntentByIdAndMerchant;
+  handleChallengeCallback: typeof handleChallengeCallback;
+}
+
+const defaultDeps: CallbackDeps = {
+  getWorldpayClient: () => getWorldpayClient(),
+  getPaymentIntentByIdAndMerchant,
+  handleChallengeCallback,
+};
+
+let overrides: Partial<CallbackDeps> | null = null;
+
+export function __setDeps(deps: Partial<CallbackDeps>) {
+  overrides = deps;
+}
+
+export function __resetDeps() {
+  overrides = null;
+}
+
+function getDeps(): CallbackDeps {
+  return { ...defaultDeps, ...overrides };
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,8 +48,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const deps = getDeps();
+
     // Look up PaymentIntent
-    const pi = await getPaymentIntentByIdAndMerchant(piId);
+    const pi = await deps.getPaymentIntentByIdAndMerchant(piId);
     if (!pi) {
       return NextResponse.json(
         { error: { code: "not_found", message: "PaymentIntent not found" } },
@@ -30,9 +59,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const wpClient = getWorldpayClient();
+    const wpClient = deps.getWorldpayClient();
 
-    const result = await handleChallengeCallback({
+    const result = await deps.handleChallengeCallback({
       worldpayClient: wpClient,
       paymentIntentId: piId,
       sessionId,
