@@ -2,7 +2,7 @@ import type {
   IWorldpayClient,
   DdcInitResponse,
 } from "@payfac/worldpay-client";
-import prisma from "../client";
+import { database } from "@repo/database";
 
 export interface DdcInitParams {
   worldpayClient: IWorldpayClient;
@@ -23,7 +23,7 @@ export async function initDDC(
   });
 
   // Store DDC session
-  await prisma.threeDSSession.create({
+  await (database as any).threeDSSession.create({
     data: {
       paymentIntentId,
       ddcJwt: response.deviceDataCollection.jwt,

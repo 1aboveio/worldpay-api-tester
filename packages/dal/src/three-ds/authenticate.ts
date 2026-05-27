@@ -2,7 +2,7 @@ import type {
   IWorldpayClient,
   ThreeDSAuthenticateResponse,
 } from "@payfac/worldpay-client";
-import prisma from "../client";
+import { database } from "@repo/database";
 
 export interface Authenticate3DSParams {
   worldpayClient: IWorldpayClient;
@@ -54,7 +54,7 @@ export async function authenticate3DS(
   });
 
   // Update ThreeDSSession based on outcome
-  await prisma.threeDSSession.updateMany({
+  await (database as any).threeDSSession.updateMany({
     where: { paymentIntentId },
     data: {
       collectionReference,

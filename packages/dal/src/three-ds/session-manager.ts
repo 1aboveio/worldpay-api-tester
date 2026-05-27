@@ -1,4 +1,4 @@
-import prisma from "../client";
+import { database } from "@repo/database";
 
 export class ThreeDSSessionManager {
   /** Create or find an existing session for a payment intent */
@@ -11,7 +11,7 @@ export class ThreeDSSessionManager {
       merchantReturnUrl?: string;
     }
   ) {
-    const existing = await prisma.threeDSSession.findFirst({
+    const existing = await (database as any).threeDSSession.findFirst({
       where: { paymentIntentId },
       orderBy: { createdAt: "desc" },
     });
@@ -19,7 +19,7 @@ export class ThreeDSSessionManager {
     if (existing) {
       // Update if new data is provided
       if (data) {
-        return prisma.threeDSSession.update({
+        return (database as any).threeDSSession.update({
           where: { id: existing.id },
           data,
         });
@@ -27,7 +27,7 @@ export class ThreeDSSessionManager {
       return existing;
     }
 
-    return prisma.threeDSSession.create({
+    return (database as any).threeDSSession.create({
       data: {
         paymentIntentId,
         ...data,
@@ -40,13 +40,13 @@ export class ThreeDSSessionManager {
     paymentIntentId: string,
     collectionReference: string
   ) {
-    const session = await prisma.threeDSSession.findFirst({
+    const session = await (database as any).threeDSSession.findFirst({
       where: { paymentIntentId },
       orderBy: { createdAt: "desc" },
     });
 
     if (!session) {
-      return prisma.threeDSSession.create({
+      return (database as any).threeDSSession.create({
         data: {
           paymentIntentId,
           collectionReference,
@@ -55,7 +55,7 @@ export class ThreeDSSessionManager {
       });
     }
 
-    return prisma.threeDSSession.update({
+    return (database as any).threeDSSession.update({
       where: { id: session.id },
       data: {
         collectionReference,
@@ -70,7 +70,7 @@ export class ThreeDSSessionManager {
     challengeReference: string,
     merchantReturnUrl?: string
   ) {
-    return prisma.threeDSSession.updateMany({
+    return (database as any).threeDSSession.updateMany({
       where: { paymentIntentId },
       data: {
         challengeReference,
@@ -82,7 +82,7 @@ export class ThreeDSSessionManager {
 
   /** Find session by ID */
   static async findById(sessionId: string) {
-    return prisma.threeDSSession.findUnique({
+    return (database as any).threeDSSession.findUnique({
       where: { id: sessionId },
       include: { paymentIntent: true },
     });
@@ -90,7 +90,7 @@ export class ThreeDSSessionManager {
 
   /** Find session by payment intent ID */
   static async findByPaymentIntent(paymentIntentId: string) {
-    return prisma.threeDSSession.findFirst({
+    return (database as any).threeDSSession.findFirst({
       where: { paymentIntentId },
       orderBy: { createdAt: "desc" },
     });

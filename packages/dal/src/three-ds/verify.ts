@@ -3,7 +3,7 @@ import type {
   ThreeDSVerifyResponse,
   ThreeDSInjection,
 } from "@payfac/worldpay-client";
-import prisma from "../client";
+import { database } from "@repo/database";
 
 export interface Verify3DSParams {
   worldpayClient: IWorldpayClient;
@@ -23,7 +23,7 @@ export async function verify3DS(
   const { worldpayClient, worldpayEntity, sessionId } = params;
 
   // Look up the session to get challengeReference
-  const session = await prisma.threeDSSession.findUnique({
+  const session = await (database as any).threeDSSession.findUnique({
     where: { id: sessionId },
   });
 
@@ -58,7 +58,7 @@ export async function verify3DS(
   });
 
   // Update session status — mark as completed to prevent replay
-  await prisma.threeDSSession.update({
+  await (database as any).threeDSSession.update({
     where: { id: sessionId },
     data: { status: "completed" },
   });

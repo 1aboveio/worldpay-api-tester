@@ -11,6 +11,7 @@ const store: {
   userMerchants: Map<string, Record<string, unknown>>
   refunds: Map<string, Record<string, unknown>>
   statements: Map<string, Record<string, unknown>>
+  threeDSSessions: Map<string, Record<string, unknown>>
   auditLogs: Record<string, unknown>[]
 } = {
   paymentIntents: new Map(),
@@ -21,6 +22,7 @@ const store: {
   userMerchants: new Map(),
   refunds: new Map(),
   statements: new Map(),
+  threeDSSessions: new Map(),
   auditLogs: [],
 }
 
@@ -70,6 +72,7 @@ export function resetMockStores() {
   store.userMerchants.clear()
   store.refunds.clear()
   store.statements.clear()
+  store.threeDSSessions.clear()
   store.auditLogs = []
 }
 
@@ -429,6 +432,59 @@ export const database = {
       if (where?.userId) logs = logs.filter((l: any) => l.userId === where.userId)
       if (where?.merchantId) logs = logs.filter((l: any) => l.merchantId === where.merchantId)
       return logs
+    },
+  },
+  threeDSSession: {
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      const id = (data.id as string) || `3ds_${Date.now()}`
+      const record = { ...data, id, createdAt: new Date(), updatedAt: new Date() }
+      store.threeDSSessions.set(id, record)
+      return record
+    },
+    findUnique: async ({ where, include }: { where: Record<string, unknown>; include?: Record<string, boolean> }) => {
+      const session = store.threeDSSessions.get(where.id as string)
+      if (!session) return null
+      if (include?.paymentIntent) {
+        const pi = store.paymentIntents.get(session.paymentIntentId as string)
+        return { ...session, paymentIntent: pi ? { ...pi, merchant: store.merchants.get(pi.merchantId as string) ?? null } : null }
+      }
+      return session
+    },
+    findFirst: async ({ where, orderBy }: { where: Record<string, unknown>; orderBy?: Record<string, string> }) => {
+      const sessions = Array.from(store.threeDSSessions.values())
+      for (const s of sessions) {
+        let match = true
+        for (const [k, v] of Object.entries(where)) {
+          if ((s as any)[k] !== v) { match = false; break }
+        }
+        if (match) {
+          if (orderBy?.createdAt === "desc") return s
+          return s
+        }
+      }
+      return null
+    },
+    update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+      const existing = store.threeDSSessions.get(where.id)
+      if (!existing) throw new Error("ThreeDSSession not found")
+      const updated = { ...existing, ...data, updatedAt: new Date() }
+      store.threeDSSessions.set(where.id, updated)
+      return updated
+    },
+    updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+      let count = 0
+      for (const [id, session] of store.threeDSSessions) {
+        let match = true
+        for (const [k, v] of Object.entries(where)) {
+          if ((session as any)[k] !== v) { match = false; break }
+        }
+        if (match) {
+          const updated = { ...session, ...data, updatedAt: new Date() }
+          store.threeDSSessions.set(id, updated)
+          count++
+        }
+      }
+      return { count }
     },
   },
 }
