@@ -52,10 +52,16 @@ RUN mkdir -p ./apps/gateway/public
 
 # Copy Prisma generated client (needed at runtime by DAL)
 COPY --from=builder /app/packages/database/generated ./packages/database/generated
+# Copy prisma schema for db push
+COPY --from=builder /app/packages/database/prisma ./packages/database/prisma
+
+# Install prisma CLI for db push on startup
+RUN npm install -g prisma@7
 
 # Copy server.js from standalone
 # Next.js standalone outputs server.js at the root
 EXPOSE 8080
 
 # Find and run the standalone server entrypoint
-CMD ["sh", "-c", "exec node apps/gateway/server.js"]
+# Run prisma db push (schema migration), then start server
+CMD ["sh", "-c", "cd packages/database && prisma db push --accept-data-loss --skip-generate && cd /app && exec node apps/gateway/server.js"]
