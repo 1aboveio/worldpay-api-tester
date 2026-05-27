@@ -371,7 +371,7 @@ describe("PaymentDetailPage (/payments/[id])", () => {
     await expect(
       PaymentDetailPage({ params: Promise.resolve({ id: "pi_detail_001" }) }),
     ).rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/portal/payments")
+    expect(mockRedirect).toHaveBeenCalledWith("/payments")
   })
 
   it("platform admin can view any merchant PI", async () => {

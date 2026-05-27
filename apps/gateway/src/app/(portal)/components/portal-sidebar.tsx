@@ -19,18 +19,18 @@ export function PortalSidebar() {
   // Determine nav items based on role
   const navItems = isPlatformAdmin && activeRole === "platform_admin"
     ? [
-        { href: "/portal/dashboard", label: "Dashboard", icon: "📊" },
-        { href: "/portal/merchants", label: "Merchants", icon: "🏢" },
-        { href: "/portal/payments", label: "Payments", icon: "💳" },
-        { href: "/portal/statements", label: "Statements", icon: "📄" },
+        { href: "/dashboard", label: "Dashboard", icon: "📊" },
+        { href: "/merchants", label: "Merchants", icon: "🏢" },
+        { href: "/payments", label: "Payments", icon: "💳" },
+        { href: "/statements", label: "Statements", icon: "📄" },
       ]
     : [
-        { href: "/portal/dashboard", label: "Dashboard", icon: "📊" },
-        { href: "/portal/payments", label: "Payments", icon: "💳" },
-        { href: "/portal/payment-methods", label: "Payment Methods", icon: "🔑" },
-        { href: "/portal/refunds", label: "Refunds", icon: "↩️" },
-        { href: "/portal/statements", label: "Statements", icon: "📄" },
-        { href: "/portal/settings", label: "Settings", icon: "⚙️" },
+        { href: "/dashboard", label: "Dashboard", icon: "📊" },
+        { href: "/payments", label: "Payments", icon: "💳" },
+        { href: "/payment-methods", label: "Payment Methods", icon: "🔑" },
+        { href: "/refunds", label: "Refunds", icon: "↩️" },
+        { href: "/statements", label: "Statements", icon: "📄" },
+        { href: "/settings", label: "Settings", icon: "⚙️" },
       ]
 
   async function handleMerchantChange(merchantId: string) {

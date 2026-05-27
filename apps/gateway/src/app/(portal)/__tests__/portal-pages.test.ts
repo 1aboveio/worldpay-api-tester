@@ -235,7 +235,7 @@ describe("MerchantsPage", () => {
 
     const { default: MerchantsPage } = await import("@/app/(portal)/merchants/page")
     await expect(MerchantsPage()).rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/portal/dashboard")
+    expect(mockRedirect).toHaveBeenCalledWith("/dashboard")
   })
 
   it("redirects unauthenticated users to login", async () => {
@@ -297,7 +297,7 @@ describe("MerchantDetailPage", () => {
     await expect(
       MerchantDetailPage({ params: Promise.resolve({ id: "m1" }) })
     ).rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/portal/dashboard")
+    expect(mockRedirect).toHaveBeenCalledWith("/dashboard")
   })
 
   it("redirects unauthenticated users to login", async () => {
@@ -486,7 +486,7 @@ describe("PaymentMethodsPage", () => {
       "@/app/(portal)/payment-methods/page"
     )
     await expect(PaymentMethodsPage()).rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/portal/dashboard")
+    expect(mockRedirect).toHaveBeenCalledWith("/dashboard")
   })
 
   it("redirects unauthenticated users to login", async () => {
@@ -534,7 +534,7 @@ describe("RefundsPage", () => {
 
     const { default: RefundsPage } = await import("@/app/(portal)/refunds/page")
     await expect(RefundsPage()).rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/portal/dashboard")
+    expect(mockRedirect).toHaveBeenCalledWith("/dashboard")
   })
 
   it("redirects unauthenticated users to login", async () => {
@@ -587,7 +587,7 @@ describe("SettingsPage", () => {
 
     const { default: SettingsPage } = await import("@/app/(portal)/settings/page")
     await expect(SettingsPage()).rejects.toThrow("NEXT_REDIRECT")
-    expect(mockRedirect).toHaveBeenCalledWith("/portal/dashboard")
+    expect(mockRedirect).toHaveBeenCalledWith("/dashboard")
   })
 
   it("redirects unauthenticated to login", async () => {

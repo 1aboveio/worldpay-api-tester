@@ -19,7 +19,7 @@ export default async function PaymentDetailPage({
   // Tenant isolation: merchant users can only see their own
   const isPlatformView = session.activeRole === "platform_admin"
   if (!isPlatformView && pi.merchantId !== session.activeMerchantId) {
-    redirect("/portal/payments")
+    redirect("/payments")
   }
 
   const pm = pi.paymentMethod as Record<string, unknown> | null

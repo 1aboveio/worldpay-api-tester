@@ -83,7 +83,7 @@ export default async function PaymentsPage({
                   <tr key={pi.id as string} className="border-b hover:bg-muted/30">
                     <td className="px-4 py-3">
                       <Link
-                        href={`/portal/payments/${pi.id}`}
+                        href={`/payments/${pi.id}`}
                         className="font-mono text-xs text-primary hover:underline"
                       >
                         {(pi.id as string).slice(0, 12)}...
@@ -115,7 +115,7 @@ export default async function PaymentsPage({
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                 <Link
                   key={p}
-                  href={`/portal/payments?page=${p}${params.merchant ? `&merchant=${params.merchant}` : ""}${params.status ? `&status=${params.status}` : ""}`}
+                  href={`/payments?page=${p}${params.merchant ? `&merchant=${params.merchant}` : ""}${params.status ? `&status=${params.status}` : ""}`}
                   className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-sm ${
                     p === page
                       ? "bg-primary text-primary-foreground"

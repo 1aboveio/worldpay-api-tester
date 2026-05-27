@@ -8,7 +8,7 @@ export default async function SettingsPage() {
   if (!session) redirect("/login")
 
   const merchantId = session.activeMerchantId
-  if (!merchantId) redirect("/portal/dashboard")
+  if (!merchantId) redirect("/dashboard")
 
   const apiKeys = await getApiKeysForMerchant(merchantId)
 
