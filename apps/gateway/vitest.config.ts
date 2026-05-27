@@ -16,6 +16,7 @@ export default defineConfig({
         "src/**/__mocks__/**",
         "src/**/*.test.*",
         "src/**/*.spec.*",
+        "src/**/smoke/**",
         "src/test-setup.ts",
         "**/*.d.ts",
       ],
