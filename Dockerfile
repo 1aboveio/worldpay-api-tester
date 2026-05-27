@@ -64,4 +64,6 @@ EXPOSE 8080
 
 # Find and run the standalone server entrypoint
 # Run prisma db push (schema migration), then start server
-CMD ["sh", "-c", "cd packages/database && prisma db push --accept-data-loss --skip-generate && cd /app && exec node apps/gateway/server.js"]
+# Start server immediately, run db push in background after short delay
+# Start server, run db push in background after server is listening
+CMD ["sh", "-c", "node apps/gateway/server.js & PID=$!; sleep 3; cd packages/database && prisma db push --accept-data-loss --skip-generate; wait $PID"]
