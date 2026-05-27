@@ -15,8 +15,9 @@ export default async function PortalLayout({
     redirect("/login")
   }
 
-  // No merchants assigned → error state
-  if (session.availableMerchants.length === 0) {
+  // Non-admin with no merchants assigned → error state. Platform admins can
+  // still access the portal (platform view) even with no merchants yet.
+  if (session.availableMerchants.length === 0 && !session.isPlatformAdmin) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">

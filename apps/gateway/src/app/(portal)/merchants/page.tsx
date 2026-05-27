@@ -9,7 +9,7 @@ export default async function MerchantsPage() {
 
   // Only platform admins can see all merchants
   if (session.activeRole !== "platform_admin") {
-    redirect("/portal/dashboard")
+    redirect("/dashboard")
   }
 
   const merchants = await listMerchants()
@@ -60,7 +60,7 @@ export default async function MerchantsPage() {
                 <tr key={merchant.id as string} className="border-b hover:bg-muted/30">
                   <td className="px-4 py-3">
                     <Link
-                      href={`/portal/merchants/${merchant.id}`}
+                      href={`/merchants/${merchant.id}`}
                       className="font-medium text-primary hover:underline"
                     >
                       {merchant.name as string}

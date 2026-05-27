@@ -10,7 +10,7 @@ export default async function MerchantDetailPage({
 }) {
   const session = await getSession()
   if (!session) redirect("/login")
-  if (session.activeRole !== "platform_admin") redirect("/portal/dashboard")
+  if (session.activeRole !== "platform_admin") redirect("/dashboard")
 
   const { id } = await params
   const merchant = await getMerchantById(id)

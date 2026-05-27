@@ -48,7 +48,7 @@ export async function updateFraudSightAction(
       capability: parsed.data.capability,
     })
 
-    revalidatePath(`/portal/merchants/${parsed.data.merchantId}`)
+    revalidatePath(`/merchants/${parsed.data.merchantId}`)
     return { success: true }
   } catch {
     return { success: false, error: { code: "INTERNAL_ERROR", message: "Failed to update FraudSight config." } }
@@ -78,7 +78,7 @@ export async function capturePaymentAction(
 
   // In production, this would call Worldpay capture API
   // For now, update local status
-  revalidatePath(`/portal/payments/${parsed.data.paymentIntentId}`)
+  revalidatePath(`/payments/${parsed.data.paymentIntentId}`)
   return { success: true }
 }
 
@@ -103,7 +103,7 @@ export async function refundPaymentAction(
   }
 
   // In production, this would call Worldpay refund API
-  revalidatePath(`/portal/payments/${parsed.data.paymentIntentId}`)
+  revalidatePath(`/payments/${parsed.data.paymentIntentId}`)
   return { success: true }
 }
 
@@ -132,7 +132,7 @@ export async function regenerateApiKeyAction(
   try {
     const { regenerateApiKey } = await import("@/dal/portal")
     await regenerateApiKey(parsed.data.merchantId, parsed.data.keyId)
-    revalidatePath("/portal/settings")
+    revalidatePath("/settings")
     return { success: true }
   } catch {
     return { success: false, error: { code: "INTERNAL_ERROR", message: "Failed to regenerate API key." } }

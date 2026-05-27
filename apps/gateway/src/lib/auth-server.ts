@@ -2,6 +2,7 @@ import "server-only"
 import { auth } from "./auth"
 import { headers } from "next/headers"
 import { cookies } from "next/headers"
+import { isAllowedEmail } from "@/app/(portal)/auth-schemas"
 
 export type EnrichedSession = {
   user: {
@@ -54,19 +55,26 @@ export async function enrichSession(user: { id: string; email: string; name?: st
     where: { userId: user.id },
   })
 
-  if (userMerchants.length === 0) return null
+  // Platform admins (@fmmpay.com accounts, or anyone already holding a
+  // platform_admin grant) can access the portal even before any merchant
+  // exists — this is what lets the first admin bootstrap a fresh database.
+  // A non-admin with no merchant access has nothing to see, so we treat that
+  // as no session.
+  const isPlatformAdmin =
+    isAllowedEmail(user.email) ||
+    userMerchants.some((um: Record<string, unknown>) => um.role === "platform_admin")
+
+  if (userMerchants.length === 0 && !isPlatformAdmin) return null
 
   // Fetch merchant names separately (UserMerchant model has no relation field)
   const merchantIds = userMerchants.map((um: Record<string, unknown>) => um.merchantId as string)
-  const merchants = await database.merchant.findMany({
-    where: { id: { in: merchantIds } },
-    select: { id: true, name: true },
-  })
+  const merchants = merchantIds.length
+    ? await database.merchant.findMany({
+        where: { id: { in: merchantIds } },
+        select: { id: true, name: true },
+      })
+    : []
   const merchantMap = new Map(merchants.map(m => [m.id, m.name]))
-
-  const isPlatformAdmin = userMerchants.some(
-    (um: Record<string, unknown>) => um.role === "platform_admin",
-  )
 
   const availableMerchants = userMerchants.map((um: Record<string, unknown>) => ({
     merchantId: um.merchantId as string,

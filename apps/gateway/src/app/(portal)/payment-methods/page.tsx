@@ -7,7 +7,7 @@ export default async function PaymentMethodsPage() {
   if (!session) redirect("/login")
 
   const merchantId = session.activeMerchantId
-  if (!merchantId) redirect("/portal/dashboard")
+  if (!merchantId) redirect("/dashboard")
 
   const methods = await listPaymentMethods(merchantId)
 
