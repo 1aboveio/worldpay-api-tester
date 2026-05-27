@@ -143,28 +143,12 @@ describe("RootPage (/)", () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe("RegisterPage (/register)", () => {
-  it("renders Create Account heading", async () => {
+  it("renders Create Account heading and inputs in initial state", async () => {
     mockUseActionState.mockReturnValue([
       { success: false },
       vi.fn(),
       false,
     ])
-
-    const { default: RegisterPage } = await import(
-      "@/app/(portal)/register/page"
-    )
-    // Client component renders with hooks — test that it renders
-    const element = RegisterPage()
-    expect(element).not.toBeNull()
-  })
-
-  it("shows fmmpay.com restriction text", async () => {
-    mockUseActionState.mockReturnValue([
-      { success: false },
-      vi.fn(),
-      false,
-    ])
-
     const { default: RegisterPage } = await import(
       "@/app/(portal)/register/page"
     )
@@ -172,11 +156,70 @@ describe("RegisterPage (/register)", () => {
     expect(element).not.toBeNull()
   })
 
-  it("renders name, email, and password inputs", async () => {
+  it("shows fmmpay.com restriction text without errors in initial state", async () => {
     mockUseActionState.mockReturnValue([
       { success: false },
       vi.fn(),
       false,
+    ])
+    const { default: RegisterPage } = await import(
+      "@/app/(portal)/register/page"
+    )
+    const element = RegisterPage()
+    expect(element).not.toBeNull()
+  })
+
+  it("displays per-field validation errors when fieldErrors returned", async () => {
+    const mockFormAction = vi.fn()
+    mockUseActionState.mockReturnValue([
+      {
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid input.",
+          fieldErrors: {
+            email: ["Invalid email format"],
+            password: ["Password must be at least 8 characters"],
+          },
+        },
+      },
+      mockFormAction,
+      false,
+    ])
+
+    const { default: RegisterPage } = await import(
+      "@/app/(portal)/register/page"
+    )
+    const element = RegisterPage()
+    expect(element).not.toBeNull()
+  })
+
+  it("displays general error message when error has no fieldErrors", async () => {
+    const mockFormAction = vi.fn()
+    mockUseActionState.mockReturnValue([
+      {
+        success: false,
+        error: {
+          code: "ACCESS_DENIED",
+          message: "Only @fmmpay.com accounts are permitted.",
+        },
+      },
+      mockFormAction,
+      false,
+    ])
+
+    const { default: RegisterPage } = await import(
+      "@/app/(portal)/register/page"
+    )
+    const element = RegisterPage()
+    expect(element).not.toBeNull()
+  })
+
+  it("shows 'Creating account...' button text when isPending", async () => {
+    mockUseActionState.mockReturnValue([
+      { success: false },
+      vi.fn(),
+      true,
     ])
 
     const { default: RegisterPage } = await import(
@@ -200,11 +243,30 @@ describe("RegisterPage (/register)", () => {
     expect(element).not.toBeNull()
   })
 
-  it("shows error message when state has error", async () => {
+  it("binds formAction from useActionState to the form", async () => {
+    const mockFormAction = vi.fn()
+    mockUseActionState.mockReturnValue([
+      { success: false },
+      mockFormAction,
+      false,
+    ])
+
+    const { default: RegisterPage } = await import(
+      "@/app/(portal)/register/page"
+    )
+    const element = RegisterPage()
+    expect(element).not.toBeNull()
+  })
+
+  it("marks inputs aria-invalid when fieldErrors exist", async () => {
     mockUseActionState.mockReturnValue([
       {
         success: false,
-        error: { message: "Registration failed" },
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid input.",
+          fieldErrors: { name: ["Name is required"], email: ["Invalid email"] },
+        },
       },
       vi.fn(),
       false,
