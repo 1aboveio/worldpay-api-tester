@@ -150,7 +150,7 @@ describe("RegisterPage (/register)", () => {
       false,
     ])
     const { default: RegisterPage } = await import(
-      "@/app/(portal)/register/page"
+      "@/app/register/page"
     )
     const element = RegisterPage()
     expect(element).not.toBeNull()
@@ -163,7 +163,7 @@ describe("RegisterPage (/register)", () => {
       false,
     ])
     const { default: RegisterPage } = await import(
-      "@/app/(portal)/register/page"
+      "@/app/register/page"
     )
     const element = RegisterPage()
     expect(element).not.toBeNull()
@@ -188,7 +188,7 @@ describe("RegisterPage (/register)", () => {
     ])
 
     const { default: RegisterPage } = await import(
-      "@/app/(portal)/register/page"
+      "@/app/register/page"
     )
     const element = RegisterPage()
     expect(element).not.toBeNull()
@@ -209,7 +209,7 @@ describe("RegisterPage (/register)", () => {
     ])
 
     const { default: RegisterPage } = await import(
-      "@/app/(portal)/register/page"
+      "@/app/register/page"
     )
     const element = RegisterPage()
     expect(element).not.toBeNull()
@@ -223,7 +223,7 @@ describe("RegisterPage (/register)", () => {
     ])
 
     const { default: RegisterPage } = await import(
-      "@/app/(portal)/register/page"
+      "@/app/register/page"
     )
     const element = RegisterPage()
     expect(element).not.toBeNull()
@@ -237,7 +237,7 @@ describe("RegisterPage (/register)", () => {
     ])
 
     const { default: RegisterPage } = await import(
-      "@/app/(portal)/register/page"
+      "@/app/register/page"
     )
     const element = RegisterPage()
     expect(element).not.toBeNull()
@@ -252,7 +252,7 @@ describe("RegisterPage (/register)", () => {
     ])
 
     const { default: RegisterPage } = await import(
-      "@/app/(portal)/register/page"
+      "@/app/register/page"
     )
     const element = RegisterPage()
     expect(element).not.toBeNull()
@@ -273,7 +273,7 @@ describe("RegisterPage (/register)", () => {
     ])
 
     const { default: RegisterPage } = await import(
-      "@/app/(portal)/register/page"
+      "@/app/register/page"
     )
     const element = RegisterPage()
     expect(element).not.toBeNull()
