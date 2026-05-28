@@ -106,7 +106,6 @@
 | 项目 | 安装位置 | 用途 | 必要性 |
 |------|---------|------|--------|
 | **Worldpay MCP** | `~/.pi/agent/mcp.json` | 查询官方 API 文档 | ✅ 必须 |
-| **to-issues skill** | `~/.agents/skills/to-issues/` | 文档转 GitHub Issues | ⚪ 后续用 |
 | **grill-me skill** | `~/.agents/skills/grill-me/` | 对抗式审查 | ✅ 推荐 |
 | **test-criteria skill** | `~/.agents/skills/test-criteria/` | 生成测试标准 | ⚪ 后续用 |
 | **nextjs-fullstack skill** | `~/.agents/skills/nextjs-fullstack/` | 技术栈规范 | ⚪ 按需 |
@@ -577,8 +576,6 @@ v3.2 (修复所有问题)
 16:14 - 17:25  梳理与验证：生成设计文档（6 个版本迭代）
     ↓
 18:58 - 19:38  文档生成：生成 PRD（4 个版本迭代）
-    ↓
-12:43 - 13:00  落地执行：转换为 GitHub Issues（9 个 Issues）
 ```
 
 ### 关键产出物
@@ -589,7 +586,6 @@ v3.2 (修复所有问题)
 | 设计 | 架构设计文档 v3.2 | `docs/design/payfac-payment-gateway-mvp-design.md` |
 | 设计 | PRD v1.3 | `docs/prd/payfac-payment-gateway-mvp-prd.md` |
 | 验证 | 验证脚本 | `src/verify-card-payments.ts` |
-| 落地 | 9 个 GitHub Issues | GitHub Issues #1 - #9 |
 
 ### 效率对比
 
@@ -599,7 +595,6 @@ v3.2 (修复所有问题)
 | 设计文档 | 3-5 天 | 1 小时 | **95%** |
 | PRD 编写 | 2-3 天 | 40 分钟 | **95%** |
 | 对抗性审查 | 1 天 | 10 分钟 | **95%** |
-| Issues 拆分 | 半天 | 15 分钟 | **95%** |
 
 ---
 
